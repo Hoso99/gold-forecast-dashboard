@@ -21,6 +21,13 @@ with st.sidebar:
     threshold = st.slider("Signal probability threshold", 0.55, 0.80, 0.65, 0.01)
     cost_bps = st.number_input("Estimated round-trip cost (basis points)", 0, 200, 10, 5)
     splits = st.slider("Walk-forward test folds", 3, 8, 5)
+    st.header("Paper-trading risk")
+    account_balance = st.number_input("Paper account balance (USD)", 100.0, 10_000_000.0, 10_000.0, 100.0)
+    risk_pct = st.number_input("Risk per trade (%)", 0.05, 1.00, 0.25, 0.05)
+    ounces_per_lot = st.number_input("Broker ounces per lot", 1.0, 1000.0, 100.0, 1.0)
+    stop_atr = st.number_input("Stop distance (ATR multiple)", 0.5, 5.0, 1.5, 0.1)
+    losses_today = st.number_input("Losing trades today", 0, 20, 0, 1)
+    major_event = st.checkbox("Major US event within next 4 hours")
     run = st.button("Run four-hour forecast", type="primary", width="stretch")
 
 
@@ -55,9 +62,50 @@ except Exception as exc:
 
 low, median, high = price_interval(result)
 forecast_time = result.as_of + pd.Timedelta(hours=4)
+now_utc = pd.Timestamp.now(tz="UTC")
+data_age_minutes = max(0.0, (now_utc - result.as_of).total_seconds() / 60)
+stale = data_age_minutes > 45
+previous_close = prices.close.shift(1)
+true_range = pd.concat([
+    prices.high - prices.low,
+    (prices.high - previous_close).abs(),
+    (prices.low - previous_close).abs(),
+], axis=1).max(axis=1)
+atr = float(true_range.rolling(14).mean().iloc[-1])
+
+gate_reasons = []
+if stale:
+    gate_reasons.append(f"latest candle is {data_age_minutes:.0f} minutes old")
+if major_event:
+    gate_reasons.append("major US event flagged within four hours")
+if losses_today >= 2:
+    gate_reasons.append("daily limit of two losing trades reached")
+if result.metrics["ROC-AUC"] < 0.55:
+    gate_reasons.append("walk-forward ROC-AUC is below 0.55")
+if result.metrics["Direction accuracy"] <= result.metrics["Always-up accuracy"]:
+    gate_reasons.append("direction accuracy does not beat the always-up baseline")
+if result.signal == "WAIT":
+    gate_reasons.append("model signal is WAIT")
+
+decision = result.signal if not gate_reasons else "WAIT"
+risk_amount = account_balance * risk_pct / 100
+stop_distance = stop_atr * atr
+ounces = risk_amount / stop_distance if stop_distance > 0 else 0.0
+lots = ounces / ounces_per_lot if ounces_per_lot > 0 else 0.0
+if decision == "BUY":
+    stop_price = result.spot - stop_distance
+    target_1 = median if median > result.spot else high
+    target_2 = high
+elif decision == "SELL":
+    stop_price = result.spot + stop_distance
+    target_1 = median if median < result.spot else low
+    target_2 = low
+else:
+    stop_price = target_1 = target_2 = float("nan")
+
 st.subheader("Latest pending four-hour forecast")
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Signal", result.signal)
+c1.metric("Paper-trade decision", decision)
 c2.metric("Probability up", f"{result.probability_up:.1%}")
 c3.metric("Median target", f"USD {median:,.2f}", f"{result.median_return:.2%}")
 c4.metric("80% target range", f"USD {low:,.2f} – {high:,.2f}")
@@ -67,16 +115,36 @@ st.caption(
     f"Forecast time: {forecast_time:%Y-%m-%d %H:%M UTC} | "
     f"Candles loaded: {result.observations:,}")
 
+if gate_reasons:
+    st.error("NO PAPER TRADE: " + "; ".join(gate_reasons) + ".")
+else:
+    st.success(
+        f"PAPER {decision} | Entry USD {result.spot:,.3f} | "
+        f"Stop USD {stop_price:,.3f} | Target 1 USD {target_1:,.3f} | "
+        f"Target 2 USD {target_2:,.3f} | Risk USD {risk_amount:,.2f} | "
+        f"Size {ounces:,.2f} oz ({lots:,.3f} lots, if contract size is correct)"
+    )
+
 latest = pd.DataFrame([{
     "Instrument": SYMBOL,
     "Data timestamp UTC": result.as_of.strftime("%Y-%m-%d %H:%M"),
     "Forecast timestamp UTC": forecast_time.strftime("%Y-%m-%d %H:%M"),
     "Starting price": result.spot,
-    "Signal": result.signal,
+    "Raw model signal": result.signal,
+    "Paper-trade decision": decision,
     "Probability up": result.probability_up,
     "Median target": median,
     "80% lower target": low,
     "80% upper target": high,
+    "Data age minutes": data_age_minutes,
+    "ATR 14": atr,
+    "Stop": stop_price,
+    "Target 1": target_1,
+    "Target 2": target_2,
+    "Risk amount": risk_amount,
+    "Position ounces": ounces if decision != "WAIT" else 0.0,
+    "Estimated lots": lots if decision != "WAIT" else 0.0,
+    "Gate reasons": "; ".join(gate_reasons),
     "Outcome": "PENDING",
 }])
 st.dataframe(latest, hide_index=True, width="stretch")
@@ -84,7 +152,9 @@ st.download_button(
     "Download latest four-hour forecast (CSV)",
     latest.to_csv(index=False).encode("utf-8"),
     f"xauusd_4h_forecast_{forecast_time:%Y%m%d_%H%M}.csv", "text/csv")
-st.warning("A probability and target range are uncertain estimates, not a guarantee or executable quote.")
+st.warning(
+    "Paper trading only. Verify your broker's contract size independently. "
+    "A probability and target range are uncertain estimates, not a guarantee or executable quote.")
 
 st.subheader("Walk-forward validation")
 metric_frame = pd.DataFrame({"Metric": result.metrics.keys(), "Value": result.metrics.values()})
