@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+import json
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
@@ -11,25 +13,14 @@ from sklearn.metrics import accuracy_score, brier_score_loss, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
-
-TICKERS = {
-    "gold": "GC=F",
-    "silver": "SI=F",
-    "dollar": "DX-Y.NYB",
-    "treasury": "TLT",
-    "tips": "TIP",
-    "oil": "CL=F",
-    "stocks": "SPY",
-    "vix": "^VIX",
-}
-
-HORIZONS = {"Next day": 1, "Next week": 5, "Next month": 21,
-            "Next 3 months": 63, "Next 12 months": 252}
+SYMBOL = "XAU/USD"
+INTERVAL = "15min"
+HORIZON_BARS = 16
+HORIZON_LABEL = "4 hours (16 × 15-minute bars)"
 
 
 @dataclass
 class ForecastResult:
-    horizon: int
     as_of: pd.Timestamp
     spot: float
     probability_up: float
@@ -41,84 +32,88 @@ class ForecastResult:
     predictions: pd.DataFrame
     importance: pd.Series
     features_used: list[str]
+    observations: int
 
 
-def download_market_data(start: str = "2007-01-01") -> pd.DataFrame:
-    try:
-        import yfinance as yf
-    except ImportError as exc:
-        raise RuntimeError("Install project packages with: pip install -r requirements.txt") from exc
-    raw = yf.download(list(TICKERS.values()), start=start, auto_adjust=True,
-                      progress=False, group_by="column", threads=True)
-    if raw.empty:
-        raise RuntimeError("No market data was downloaded. Check your internet connection.")
-    close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
-    if isinstance(close, pd.Series):
-        close = close.to_frame(TICKERS["gold"])
-    rename = {ticker: name for name, ticker in TICKERS.items()}
-    close = close.rename(columns=rename).sort_index()
-    if "gold" not in close or close["gold"].dropna().empty:
+def download_market_data(api_key: str, outputsize: int = 5000) -> pd.DataFrame:
+    if not api_key:
+        raise ValueError("TWELVE_DATA_API_KEY is missing from Streamlit secrets.")
+    query = urlencode({
+        "symbol": SYMBOL, "interval": INTERVAL, "outputsize": outputsize,
+        "timezone": "UTC", "format": "JSON", "apikey": api_key,
+    })
+    with urlopen(f"https://api.twelvedata.com/time_series?{query}", timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if payload.get("status") == "error" or "values" not in payload:
+        raise RuntimeError(f"Twelve Data error: {payload.get('message', 'No candle data returned.')}")
+    frame = pd.DataFrame(payload["values"])
+    required = ["datetime", "open", "high", "low", "close"]
+    missing = [column for column in required if column not in frame]
+    if missing:
+        raise RuntimeError(f"Twelve Data response is missing: {', '.join(missing)}")
+    frame["datetime"] = pd.to_datetime(frame["datetime"], utc=True, errors="coerce")
+    for column in ["open", "high", "low", "close"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.set_index("datetime").sort_index()[["open", "high", "low", "close"]]
+    frame = frame[~frame.index.duplicated(keep="last")].dropna()
+    if len(frame) < 1200:
         raise RuntimeError(
-            f"Gold symbol {TICKERS['gold']} was unavailable from the data provider."
-        )
-     
-    close = close.reindex(close["gold"].dropna().index).ffill(limit=5)
-    return close.dropna(axis=1, how="all")
+            f"Only {len(frame)} complete 15-minute candles were returned; at least 1,200 are required.")
+    return frame
 
 
 def _rsi(price: pd.Series, window: int = 14) -> pd.Series:
     change = price.diff()
-    gain = change.clip(lower=0).rolling(window).mean()
-    loss = -change.clip(upper=0).rolling(window).mean()
-    rs = gain / loss.replace(0, np.nan)
-    return 100 - 100 / (1 + rs)
+    gain = change.clip(lower=0).ewm(alpha=1 / window, adjust=False).mean()
+    loss = -change.clip(upper=0).ewm(alpha=1 / window, adjust=False).mean()
+    return 100 - 100 / (1 + gain / loss.replace(0, np.nan))
 
 
 def make_features(prices: pd.DataFrame) -> pd.DataFrame:
-    gold = prices["gold"]
+    close = prices["close"]
     out = pd.DataFrame(index=prices.index)
-    for n in (1, 5, 10, 21, 63, 126, 252):
-        out[f"gold_ret_{n}"] = gold.pct_change(n)
-    for n in (10, 21, 63, 126, 252):
-        out[f"gold_ma_gap_{n}"] = gold / gold.rolling(n).mean() - 1
-    daily = gold.pct_change()
-    for n in (10, 21, 63):
-        out[f"gold_vol_{n}"] = daily.rolling(n).std() * np.sqrt(252)
-    out["rsi_14"] = _rsi(gold) / 100
-    out["drawdown_252"] = gold / gold.rolling(252).max() - 1
-    out["range_position_63"] = ((gold - gold.rolling(63).min()) /
-                                (gold.rolling(63).max() - gold.rolling(63).min()))
-    for name in prices.columns:
-        if name == "gold":
-            continue
-        for n in (5, 21, 63):
-            out[f"{name}_ret_{n}"] = prices[name].pct_change(n)
-        out[f"{name}_vol_21"] = prices[name].pct_change().rolling(21).std() * np.sqrt(252)
-    if {"gold", "silver"}.issubset(prices.columns):
-        out["gold_silver_ratio_gap"] = ((prices.gold / prices.silver) /
-                                         (prices.gold / prices.silver).rolling(126).mean() - 1)
-    out = out.replace([np.inf, -np.inf], np.nan)
-    return out
+    returns = close.pct_change()
+    for bars in (1, 2, 4, 8, 16, 32, 64, 96):
+        out[f"return_{bars}"] = close.pct_change(bars)
+    for bars in (8, 16, 32, 64, 96):
+        out[f"ema_gap_{bars}"] = close / close.ewm(span=bars, adjust=False).mean() - 1
+    for bars in (8, 16, 32, 64):
+        out[f"volatility_{bars}"] = returns.rolling(bars).std() * np.sqrt(bars)
+    previous_close = close.shift(1)
+    true_range = pd.concat([
+        prices.high - prices.low,
+        (prices.high - previous_close).abs(),
+        (prices.low - previous_close).abs(),
+    ], axis=1).max(axis=1)
+    out["atr_14_pct"] = true_range.rolling(14).mean() / close
+    out["rsi_14"] = _rsi(close) / 100
+    out["candle_body"] = (prices.close - prices.open) / prices.open
+    out["range_pct"] = (prices.high - prices.low) / prices.open
+    out["range_position_32"] = (
+        (close - prices.low.rolling(32).min()) /
+        (prices.high.rolling(32).max() - prices.low.rolling(32).min()))
+    out["hour_sin"] = np.sin(2 * np.pi * out.index.hour / 24)
+    out["hour_cos"] = np.cos(2 * np.pi * out.index.hour / 24)
+    out["weekday"] = out.index.dayofweek / 4
+    return out.replace([np.inf, -np.inf], np.nan)
 
 
-def _targets(prices: pd.DataFrame, horizon: int) -> tuple[pd.Series, pd.Series]:
-    forward_return = prices["gold"].shift(-horizon) / prices["gold"] - 1
-    direction = (forward_return > 0).astype(float)
-    direction[forward_return.isna()] = np.nan
-    return direction, forward_return
+def _targets(prices: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    future_return = prices.close.shift(-HORIZON_BARS) / prices.close - 1
+    direction = (future_return > 0).astype(float)
+    direction[future_return.isna()] = np.nan
+    return direction, future_return
 
 
-def _models(seed: int = 42):
+def _models(seed: int):
     classifier = HistGradientBoostingClassifier(
-        learning_rate=0.04, max_iter=180, max_leaf_nodes=15,
-        min_samples_leaf=25, l2_regularization=1.0, random_state=seed)
+        learning_rate=0.035, max_iter=160, max_leaf_nodes=15,
+        min_samples_leaf=30, l2_regularization=1.5, random_state=seed)
     regressors = {
-        "lower": GradientBoostingRegressor(loss="quantile", alpha=0.10, n_estimators=140,
-            max_depth=2, learning_rate=0.035, min_samples_leaf=20, random_state=seed),
-        "median": GradientBoostingRegressor(loss="quantile", alpha=0.50, n_estimators=140,
-            max_depth=2, learning_rate=0.035, min_samples_leaf=20, random_state=seed),
-        "upper": GradientBoostingRegressor(loss="quantile", alpha=0.90, n_estimators=140,
-            max_depth=2, learning_rate=0.035, min_samples_leaf=20, random_state=seed),
+        name: GradientBoostingRegressor(
+            loss="quantile", alpha=alpha, n_estimators=130, max_depth=2,
+            learning_rate=0.035, min_samples_leaf=25, random_state=seed)
+        for name, alpha in (("lower", 0.10), ("median", 0.50), ("upper", 0.90))
     }
     return classifier, regressors
 
@@ -130,98 +125,90 @@ def _signal(probability: float, expected_return: float, cost_bps: float,
         return "BUY"
     if probability <= 1 - threshold and expected_return < -cost:
         return "SELL"
-    return "NEUTRAL"
+    return "WAIT"
 
 
-def fit_and_backtest(prices: pd.DataFrame, horizon: int, splits: int = 6,
-                     cost_bps: float = 10, threshold: float = 0.58) -> ForecastResult:
+def fit_and_backtest(prices: pd.DataFrame, splits: int = 5,
+                     cost_bps: float = 10, threshold: float = 0.65) -> ForecastResult:
     features = make_features(prices)
-    y_cls, y_ret = _targets(prices, horizon)
-    combined = features.join(y_cls.rename("direction")).join(y_ret.rename("forward_return")).dropna()
-    if len(combined) < 700:
-        raise ValueError(f"Only {len(combined)} complete rows; at least 700 are required.")
-
-    X = combined[features.columns]
-    y = combined.direction.astype(int)
-    r = combined.forward_return
-    effective_splits = min(splits, max(2, len(X) // 300))
-    cv = TimeSeriesSplit(n_splits=effective_splits, gap=horizon)
-    rows: list[pd.DataFrame] = []
-
+    y_cls, y_ret = _targets(prices)
+    labelled = features.join(y_cls.rename("direction")).join(
+        y_ret.rename("forward_return")).dropna()
+    if len(labelled) < 1000:
+        raise ValueError(f"Only {len(labelled)} labelled rows; at least 1,000 are required.")
+    X = labelled[features.columns]
+    y = labelled.direction.astype(int)
+    returns = labelled.forward_return
+    effective_splits = min(splits, max(3, len(X) // 500))
+    cv = TimeSeriesSplit(n_splits=effective_splits, gap=HORIZON_BARS)
+    rows = []
     for fold, (train_idx, test_idx) in enumerate(cv.split(X), 1):
         scaler = StandardScaler()
-        X_train = scaler.fit_transform(X.iloc[train_idx])
-        X_test = scaler.transform(X.iloc[test_idx])
-        classifier, regressors = _models(42 + fold)
-        classifier.fit(X_train, y.iloc[train_idx])
+        train = scaler.fit_transform(X.iloc[train_idx])
+        test = scaler.transform(X.iloc[test_idx])
+        classifier, regressors = _models(40 + fold)
+        classifier.fit(train, y.iloc[train_idx])
         pred = pd.DataFrame(index=X.iloc[test_idx].index)
-        pred["actual_return"] = r.iloc[test_idx]
+        pred["actual_return"] = returns.iloc[test_idx]
         pred["actual_up"] = y.iloc[test_idx]
-        pred["probability_up"] = classifier.predict_proba(X_test)[:, 1]
-        for key, model in regressors.items():
-            model.fit(X_train, r.iloc[train_idx])
-            pred[key] = model.predict(X_test)
+        pred["probability_up"] = classifier.predict_proba(test)[:, 1]
+        for name, model in regressors.items():
+            model.fit(train, returns.iloc[train_idx])
+            pred[name] = model.predict(test)
         pred["fold"] = fold
         rows.append(pred)
-
     predictions = pd.concat(rows).sort_index()
     predictions["signal"] = [
         _signal(p, m, cost_bps, threshold)
-        for p, m in zip(predictions.probability_up, predictions["median"])
-    ]
-    predictions["position"] = predictions.signal.map({"BUY": 1, "SELL": -1, "NEUTRAL": 0})
-    # Sample non-overlapping decisions; this avoids pretending overlapping h-day trades are independent.
-    event = predictions.iloc[::horizon].copy()
-    turnover = event.position.diff().abs().fillna(event.position.abs())
-    event["strategy_return"] = event.position * event.actual_return - turnover * cost_bps / 10_000
-    event["strategy_equity"] = (1 + event.strategy_return).cumprod()
-    event["gold_equity"] = (1 + event.actual_return).cumprod()
-    predictions["strategy_equity"] = event.strategy_equity.reindex(predictions.index).ffill()
-    predictions["gold_equity"] = event.gold_equity.reindex(predictions.index).ffill()
-
-    auc = roc_auc_score(predictions.actual_up, predictions.probability_up)
-    coverage = ((predictions.actual_return >= predictions.lower) &
-                (predictions.actual_return <= predictions.upper)).mean()
-    years = max((event.index[-1] - event.index[0]).days / 365.25, 0.25)
-    strategy_cagr = event.strategy_equity.iloc[-1] ** (1 / years) - 1
-    peak = event.strategy_equity.cummax()
-    max_dd = (event.strategy_equity / peak - 1).min()
+        for p, m in zip(predictions.probability_up, predictions["median"])]
+    predictions["position"] = predictions.signal.map({"BUY": 1, "SELL": -1, "WAIT": 0})
+    events = predictions.iloc[::HORIZON_BARS].copy()
+    turnover = events.position.diff().abs().fillna(events.position.abs())
+    events["strategy_return"] = (
+        events.position * events.actual_return - turnover * cost_bps / 10_000)
+    events["strategy_equity"] = (1 + events.strategy_return).cumprod()
+    events["gold_equity"] = (1 + events.actual_return).cumprod()
+    predictions["strategy_equity"] = events.strategy_equity.reindex(predictions.index).ffill()
+    predictions["gold_equity"] = events.gold_equity.reindex(predictions.index).ffill()
+    peak = events.strategy_equity.cummax()
     metrics = {
-        "ROC-AUC": auc,
+        "ROC-AUC": roc_auc_score(predictions.actual_up, predictions.probability_up),
         "Brier score": brier_score_loss(predictions.actual_up, predictions.probability_up),
-        "Direction accuracy": accuracy_score(predictions.actual_up, predictions.probability_up >= 0.5),
+        "Direction accuracy": accuracy_score(
+            predictions.actual_up, predictions.probability_up >= 0.5),
         "Always-up accuracy": predictions.actual_up.mean(),
-        "80% interval coverage": coverage,
-        "Strategy CAGR": strategy_cagr,
-        "Strategy max drawdown": max_dd,
-        "Trades": float((event.position.diff().fillna(event.position) != 0).sum()),
+        "80% interval coverage": ((predictions.actual_return >= predictions.lower) &
+                                  (predictions.actual_return <= predictions.upper)).mean(),
+        "Strategy total return": events.strategy_equity.iloc[-1] - 1,
+        "Strategy max drawdown": (events.strategy_equity / peak - 1).min(),
+        "Signal changes": float((events.position.diff().fillna(events.position) != 0).sum()),
     }
-
-    full = features.dropna()
-    latest_x = full.iloc[[-1]]
-    train_mask = X.index <= full.index[-1]
+    full_features = features.dropna()
+    latest_x = full_features.iloc[[-1]]
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X.loc[train_mask])
+    scaled = scaler.fit_transform(X)
     latest_scaled = scaler.transform(latest_x)
     classifier, regressors = _models(99)
-    classifier.fit(X_scaled, y.loc[train_mask])
+    classifier.fit(scaled, y)
     probability = float(classifier.predict_proba(latest_scaled)[0, 1])
-    forecasts: dict[str, float] = {}
-    for key, model in regressors.items():
-        model.fit(X_scaled, r.loc[train_mask])
-        forecasts[key] = float(model.predict(latest_scaled)[0])
-    perm = permutation_importance(classifier, X_scaled[-min(500, len(X_scaled)):],
-                                  y.loc[train_mask].iloc[-min(500, len(X_scaled)):],
-                                  n_repeats=3, random_state=42, scoring="neg_brier_score")
-    importance = pd.Series(perm.importances_mean, index=X.columns).sort_values(ascending=False).head(15)
-    spot = float(prices.gold.loc[:latest_x.index[0]].iloc[-1])
+    forecast = {}
+    for name, model in regressors.items():
+        model.fit(scaled, returns)
+        forecast[name] = float(model.predict(latest_scaled)[0])
+    sample = min(500, len(X))
+    perm = permutation_importance(
+        classifier, scaled[-sample:], y.iloc[-sample:], n_repeats=3,
+        random_state=42, scoring="neg_brier_score")
+    importance = pd.Series(perm.importances_mean, index=X.columns).nlargest(15)
+    as_of = latest_x.index[0]
+    spot = float(prices.close.loc[:as_of].iloc[-1])
     return ForecastResult(
-        horizon=horizon, as_of=latest_x.index[0], spot=spot,
-        probability_up=probability, median_return=forecasts["median"],
-        lower_return=forecasts["lower"], upper_return=forecasts["upper"],
-        signal=_signal(probability, forecasts["median"], cost_bps, threshold),
+        as_of=as_of, spot=spot, probability_up=probability,
+        median_return=forecast["median"], lower_return=forecast["lower"],
+        upper_return=forecast["upper"],
+        signal=_signal(probability, forecast["median"], cost_bps, threshold),
         metrics=metrics, predictions=predictions, importance=importance,
-        features_used=list(X.columns))
+        features_used=list(X.columns), observations=len(prices))
 
 
 def price_interval(result: ForecastResult) -> tuple[float, float, float]:
