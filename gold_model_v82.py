@@ -21,6 +21,7 @@ from gold_model import (
 from gold_model_v8 import *  # noqa: F401,F403 - V8.2 extends the validated V8.1 engines
 
 MODEL_VERSION = "8.2.5-one-hour-structural-behavioral-statistical-research"
+INTRADAY_INTERVAL = "15min"
 INTRADAY_HORIZON_BARS = 4
 INTRADAY_HORIZON_LABEL = "1 hour (4 x 15-minute bars)"
 
