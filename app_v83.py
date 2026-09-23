@@ -67,6 +67,24 @@ st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%
 if decision.reasons:
     st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")
 
+st.subheader("Elliott Wave audit")
+e1, e2, e3, e4, e5 = st.columns(5)
+e1.metric("Current bias", elliott.current_bias)
+e2.metric("Current structure", elliott.current_structure)
+e3.metric("Probability adjustment", f"{elliott.adjustment:+.1%}")
+e4.metric("Holdout accuracy", f"{elliott.accuracy:.1%}")
+e5.metric("Reliability gate", "PASS" if elliott.qualified else "FAIL")
+st.caption(
+    f"Causal confirmed-pivot evidence | Holdout observations: {elliott.observations:,} | "
+    f"90% Wilson lower bound: {elliott.lower_bound:.1%}"
+)
+if elliott.reasons:
+    st.info("Elliott evidence not applied: " + "; ".join(elliott.reasons) + ".")
+elif elliott.adjustment:
+    st.success(f"Qualified Elliott evidence adjusted probability by {elliott.adjustment:+.1%}.")
+else:
+    st.info("Qualified Elliott evidence is neutral; no probability adjustment was applied.")
+
 ledger = ForecastLedgerV83()
 settled = ledger.settle(gold)
 ledger.record(
@@ -110,4 +128,3 @@ st.dataframe(pd.DataFrame([{"Measure": key, "Value": value} for key, value in te
 st.subheader("Macro release audit")
 st.dataframe(macro_audit, hide_index=True, width="stretch")
 st.caption("Slow factors classify regime at their true release frequency; they do not create synthetic 15-minute releases.")
-
