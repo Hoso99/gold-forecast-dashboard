@@ -66,7 +66,37 @@ c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
 st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%m-%d %H:%M UTC} | Spot USD {result.spot:,.2f}")
 if decision.reasons:
     st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")
+st.subheader("Elliott Wave audit")
+e1, e2, e3, e4, e5 = st.columns(5)
 
+e1.metric("Current bias", elliott.current_bias)
+e2.metric("Current structure", elliott.current_structure)
+e3.metric("Probability adjustment", f"{elliott.adjustment:+.1%}")
+e4.metric("Historical accuracy", f"{elliott.accuracy:.1%}")
+e5.metric("Reliability gate", "PASS" if elliott.qualified else "FAIL")
+
+st.caption(
+    f"Causal confirmed-pivot evidence | "
+    f"Observations: {elliott.observations:,} | "
+    f"90% Wilson lower bound: {elliott.lower_bound:.1%}"
+)
+
+if elliott.reasons:
+    st.info(
+        "Elliott evidence not applied: "
+        + "; ".join(elliott.reasons)
+        + "."
+    )
+elif elliott.adjustment:
+    st.success(
+        f"Qualified Elliott evidence adjusted probability "
+        f"by {elliott.adjustment:+.1%}."
+    )
+else:
+    st.info(
+        "Qualified Elliott evidence is neutral; "
+        "no probability adjustment was applied."
+    )
 ledger = ForecastLedgerV83()
 settled = ledger.settle(gold)
 ledger.record(
