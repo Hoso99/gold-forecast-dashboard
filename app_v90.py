@@ -4,6 +4,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from forecast_ledger_v90 import ForecastLedgerV90
+from event_chart_v90 import (
+    combine_chart_events, event_price_chart, manual_event_frame)
 from free_gold_perpetuals_v90 import (
     collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
 from gold_model import price_interval, technical_snapshot
@@ -32,6 +34,14 @@ with st.sidebar:
     major_event = st.checkbox(
         "Investing.com 3-star USD event within next hour",
         help="Check this after reviewing the embedded calendar. It blocks forecast release.")
+    manual_event_name = st.text_input(
+        "Event name", "President Trump speech", disabled=not major_event)
+    manual_event_date = st.date_input(
+        "Event date (GMT)", value=pd.Timestamp.now(tz="UTC").date(),
+        disabled=not major_event)
+    manual_event_time = st.time_input(
+        "Event time (GMT)", value=pd.Timestamp.now(tz="UTC").floor("15min").time(),
+        disabled=not major_event)
     slow_file = st.file_uploader(
         "Optional official positioning CSV", type=["csv"],
         help=("Release-timestamped CFTC managed-money, central-bank demand or "
@@ -60,8 +70,11 @@ def official_calendar():
     return download_official_events()
 
 official_events, official_audit = official_calendar()
+manual_events = manual_event_frame(
+    major_event, manual_event_date, manual_event_time, manual_event_name)
+chart_events = combine_chart_events(official_events, manual_events)
 automatic_event_lock, nearby_official_events = official_event_risk(
-    official_events)
+    chart_events)
 
 @st.cache_data(ttl=15, show_spinner=False)
 def free_perpetual_audit():
@@ -108,7 +121,7 @@ except Exception as exc:
     st.error(f"Version 9.0 could not run: {exc}")
     st.stop()
 
-notice_state, notice_events = event_risk_notice(official_events)
+notice_state, notice_events = event_risk_notice(chart_events)
 if major_event and notice_state == "CLEAR":
     notice_state = "ELEVATED"
 if notice_state == "LOCKOUT":
@@ -134,6 +147,14 @@ else:
     st.success(
         "No scheduled high-impact BLS, BEA or Federal Reserve event was found "
         "in the next four hours. Unscheduled breaking-news spikes remain possible.")
+
+st.subheader("Gold chart with high-impact event markers")
+st.plotly_chart(
+    event_price_chart(gold, chart_events), width="stretch",
+    config={"displaylogo": False})
+st.caption(
+    "Yellow = manually confirmed Investing.com three-star event. "
+    "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
 
 st.subheader("Free three-venue XAU perpetual consensus")
 p1, p2, p3, p4 = st.columns(4)
