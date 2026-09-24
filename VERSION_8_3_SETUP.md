@@ -83,3 +83,22 @@ features in model decisions.
 - Streamlit Community Cloud's local filesystem is not guaranteed to survive an
   app restart. Download the ledger regularly or configure persistent storage
   before treating it as a permanent audit record.
+
+## Licensed economic-release feed
+
+Gold Version 8.3.0 supports the Trading Economics licensed calendar API. Add
+the subscribed API credential to Streamlit Secrets:
+
+```toml
+TRADING_ECONOMICS_API_KEY = "your_key_or_client:secret"
+```
+
+The application requests high-importance United States releases with UTC time,
+actual, forecast, previous, revised and source fields. It refreshes once per
+minute and automatically applies the 60-minute pre-release / 30-minute
+post-release safety lockout. Before publication, direction is always UNKNOWN.
+After publication, the initial gold implication is derived from the numeric
+surprise and is only marked confirmed when dollar and Treasury proxies agree.
+
+Confirm that the selected Trading Economics subscription permits use in a
+public website. Never commit the credential to GitHub.

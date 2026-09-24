@@ -3,8 +3,12 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from cme_microstructure_v830 import audit_microstructure, collect_cme_gc
+from economic_release_feed_v830 import (
+    display_events as display_licensed_events, download_us_high_impact,
+    latest_release_signal, release_lock)
 from forecast_ledger_v83 import ForecastLedgerV83
+from free_gold_perpetuals_v830 import (
+    collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
 from gold_model import price_interval, technical_snapshot
 from gold_model_v82 import (
     INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL, apply_elliott_overlay,
@@ -31,9 +35,6 @@ with st.sidebar:
     major_event = st.checkbox(
         "Investing.com 3-star USD event within next hour",
         help="Check this after reviewing the embedded calendar. It blocks forecast release.")
-    use_cme = st.checkbox(
-        "Use licensed CME GC live feed",
-        help="Requires CME_ACCESS_TOKEN. Uses real GC trades and one-deep top of book.")
     slow_file = st.file_uploader(
         "Optional official positioning CSV", type=["csv"],
         help=("Release-timestamped CFTC managed-money, central-bank demand or "
@@ -64,6 +65,47 @@ def official_calendar():
 official_events, official_audit = official_calendar()
 automatic_event_lock, nearby_official_events = official_event_risk(
     official_events)
+
+try:
+    te_key = str(st.secrets["TRADING_ECONOMICS_API_KEY"])
+except (KeyError, FileNotFoundError):
+    te_key = os.getenv("TRADING_ECONOMICS_API_KEY", "")
+
+@st.cache_data(ttl=60, show_spinner=False)
+def licensed_calendar(api_key):
+    return download_us_high_impact(api_key)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def free_perpetual_audit():
+    return collect_free_perpetual_consensus()
+
+te_error = ""
+try:
+    te_events = licensed_calendar(te_key) if te_key else pd.DataFrame()
+except Exception as exc:
+    te_events, te_error = pd.DataFrame(), str(exc)
+te_event_lock, nearby_te_events = release_lock(te_events)
+
+st.subheader("Licensed machine-readable US economic releases")
+if not te_key:
+    st.info(
+        "Trading Economics feed is not configured. Add "
+        "TRADING_ECONOMICS_API_KEY to Streamlit Secrets to automate actual, "
+        "forecast, previous and importance values.")
+elif te_error:
+    st.warning(f"Licensed release feed unavailable: {te_error}")
+else:
+    now_utc = pd.Timestamp.now(tz="UTC")
+    relevant_te = te_events[
+        (te_events.timestamp >= now_utc - pd.Timedelta(minutes=30)) &
+        (te_events.timestamp <= now_utc + pd.Timedelta(hours=24))]
+    st.dataframe(display_licensed_events(relevant_te), hide_index=True,
+                 width="stretch")
+    if te_event_lock:
+        st.error(
+            "AUTOMATIC EVENT LOCKOUT — a licensed high-impact US release is "
+            "within 60 minutes before or 30 minutes after release.")
 if automatic_event_lock:
     st.error(
         "Official calendar lockout is active: a high-impact event is within "
@@ -98,26 +140,10 @@ try:
         macro = combine_macro_sources(fred, slow)
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
                                         threshold, cost_bps, gold)
-        cme_frame = pd.DataFrame()
-        cme_error = ""
-        if use_cme:
-            try:
-                cme_token = str(st.secrets["CME_ACCESS_TOKEN"])
-            except (KeyError, FileNotFoundError):
-                cme_token = os.getenv("CME_ACCESS_TOKEN", "")
-            try:
-                cme_frame = collect_cme_gc(cme_token, seconds=8)
-            except Exception as cme_exc:
-                cme_error = str(cme_exc)
-        cme_audit = audit_microstructure(cme_frame)
+        perpetual_consensus = free_perpetual_audit()
         decision = decide_v83(
             result, macro, elliott, threshold, cost_bps,
-            major_event=(major_event or automatic_event_lock))
-        if (use_cme and cme_audit.status == "LIVE" and
-                cme_audit.risk == "HIGH"):
-            decision.action = "BLOCKED"
-            decision.reasons.append(
-                "live COMEX liquidity risk is high; spread/depth conditions are unsafe")
+            major_event=(major_event or automatic_event_lock or te_event_lock))
 except Exception as exc:
     st.error(f"Version 8.3 could not run: {exc}")
     st.stop()
@@ -149,33 +175,60 @@ else:
         "No scheduled high-impact BLS, BEA or Federal Reserve event was found "
         "in the next four hours. Unscheduled breaking-news spikes remain possible.")
 
-st.subheader("COMEX institutional microstructure audit")
-if not use_cme:
-    st.info(
-        "CME monitoring is off. Enable the licensed CME GC feed in the sidebar. "
-        "No order-book inference is being fabricated from spot candles.")
-elif cme_audit.status != "LIVE":
+st.subheader("Free three-venue XAU perpetual consensus")
+p1, p2, p3, p4 = st.columns(4)
+p1.metric("Feed status", perpetual_consensus.status)
+p2.metric("Live venues", f"{perpetual_consensus.live_venues}/3")
+p3.metric("Consensus", perpetual_consensus.direction)
+p4.metric("Agreement", f"{perpetual_consensus.agreement}/3 · {perpetual_consensus.confidence}")
+perpetual_table = perpetual_display_frame(perpetual_consensus)
+st.dataframe(
+    perpetual_table,
+    column_config={
+        "Last": st.column_config.NumberColumn(format="%.2f"),
+        "Book imbalance": st.column_config.NumberColumn(format="%+.1%%"),
+        "Trade imbalance": st.column_config.NumberColumn(format="%+.1%%"),
+    }, hide_index=True, width="stretch")
+if perpetual_consensus.agreement == 3:
     st.warning(
-        "CME feed is unavailable or stale. Its direction has zero weight. " +
-        (f"Connection detail: {cme_error}" if cme_error else ""))
+        f"THREE-VENUE {perpetual_consensus.direction}: Binance, Bybit and OKX "
+        "currently agree. Treat this as a real-time liquidity warning, not a trade instruction.")
+elif perpetual_consensus.agreement == 2:
+    st.info(
+        f"TWO-VENUE {perpetual_consensus.direction}: confirmation is moderate; "
+        "one venue is neutral, opposed or unavailable.")
 else:
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Feed", cme_audit.status)
-    m2.metric("GC contract", cme_audit.symbol or "N/A")
-    m3.metric("Spread", f"{cme_audit.spread_ticks:.1f} ticks")
-    m4.metric("Top-book imbalance", f"{cme_audit.top_imbalance:+.1%}")
-    m5.metric("Pressure", cme_audit.directional_bias)
-    if cme_audit.risk == "HIGH":
-        st.error("COMEX LIQUIDITY WARNING — execution is blocked while the live spread is abnormal.")
-    elif cme_audit.risk == "ELEVATED":
-        st.warning("COMEX liquidity is strongly one-sided. Treat a stop-run or rejection as possible.")
-    else:
-        st.success("COMEX top-of-book conditions are currently normal.")
+    st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
 st.caption(
-    "CME WebSocket data is trades plus conflated one-deep top of book—not Level 2. "
-    "Microstructure direction remains audit-only until historical CME data passes "
-    "purged walk-forward accuracy, calibration and cost gates. Full depth/footprint "
-    "requires a separately entitled CME MDP or Google Pub/Sub feed.")
+    "Free public Binance XAUUSDT, Bybit XAUUSDT and OKX XAU-USDT-SWAP "
+    "snapshots. These are synthetic perpetual proxies—not COMEX GC—and have "
+    "zero forecast weight until timestamped out-of-sample validation passes.")
+
+st.subheader("Economic-release spike direction")
+release_signal = latest_release_signal(te_events, confirmations)
+q1, q2, q3, q4 = st.columns(4)
+q1.metric("Release state", release_signal.state)
+q2.metric("Gold implication", release_signal.direction)
+q3.metric("Event", release_signal.event or "N/A")
+q4.metric("Cross-market confirmations", release_signal.confirmations)
+if release_signal.timestamp is not None:
+    st.caption(
+        f"Time {release_signal.timestamp:%Y-%m-%d %H:%M GMT} | "
+        f"Actual {release_signal.actual or 'pending'} | "
+        f"Forecast {release_signal.forecast or 'N/A'} | "
+        f"Previous {release_signal.previous or 'N/A'}")
+if release_signal.state == "CONFIRMED":
+    st.error(
+        f"POST-RELEASE {release_signal.direction} RISK — "
+        f"{release_signal.explanation}.")
+elif release_signal.state in {"PRELIMINARY", "AMBIGUOUS", "AWAITING ACTUAL"}:
+    st.warning(release_signal.explanation + ". Direction is not a trade instruction.")
+else:
+    st.info(release_signal.explanation + ".")
+st.caption(
+    "Before publication the direction is always UNKNOWN. After publication, "
+    "the app compares actual with consensus and requires dollar/Treasury "
+    "confirmation before labelling the implication confirmed.")
 
 st.subheader("Institutional liquidity and accumulation audit")
 institutional = result.institutional_audit
