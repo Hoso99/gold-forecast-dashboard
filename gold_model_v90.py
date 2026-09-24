@@ -15,11 +15,11 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V83 = "9.0.0-free-three-venue-live-settlement-research"
+MODEL_VERSION_V90 = "9.0.0-free-three-venue-live-settlement-research"
 
 
 @dataclass
-class V83Decision:
+class V90Decision:
     action: str
     candidate: str
     macro_regime: str
@@ -184,7 +184,7 @@ def _safe_auc(y, p):
     return float(roc_auc_score(y, p)) if pd.Series(y).nunique() > 1 else 0.5
 
 
-def _v83_features(gold, confirmations):
+def _v90_features(gold, confirmations):
     """Causal features available at the forecast timestamp."""
     out = make_features(gold, confirmations).copy()
     returns = gold.close.pct_change()
@@ -259,9 +259,9 @@ def _folds(n, splits, gap):
             yield np.arange(train_end), np.arange(test_start, test_end)
 
 
-def fit_v83_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
+def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
     """Purged, calibrated one-hour ensemble with an 8.2.5 champion comparison."""
-    features = _v83_features(gold, confirmations)
+    features = _v90_features(gold, confirmations)
     future = gold.close.shift(-INTRADAY_HORIZON_BARS) / gold.close - 1
     labelled = features.join(future.rename("future_return")).dropna()
     if len(labelled) < 1200:
@@ -443,7 +443,7 @@ def non_overlapping_evaluation(result, threshold, cost_bps):
             "Max drawdown": float((equity / equity.cummax() - 1).min())}
 
 
-def decide_v83(result, macro, elliott, threshold, cost_bps, major_event=False):
+def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False):
     regime, _, evidence = classify_macro_regime(macro, result.as_of)
     evaluation = non_overlapping_evaluation(result, threshold, cost_bps)
     minimum = 2 * cost_bps / 10_000
@@ -488,6 +488,6 @@ def decide_v83(result, macro, elliott, threshold, cost_bps, major_event=False):
         action = "NO EDGE"
     else:
         action = candidate
-    return V83Decision(
+    return V90Decision(
         action, candidate, regime, float(result.median_return), minimum,
         list(dict.fromkeys(reasons)), evaluation)

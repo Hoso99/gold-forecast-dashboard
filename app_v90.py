@@ -3,15 +3,15 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from forecast_ledger_v83 import ForecastLedgerV83
-from free_gold_perpetuals_v830 import (
+from forecast_ledger_v90 import ForecastLedgerV90
+from free_gold_perpetuals_v90 import (
     collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
 from gold_model import price_interval, technical_snapshot
 from gold_model_v82 import (
     INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL, apply_elliott_overlay,
     download_intraday_bundle, fit_intraday_system, validate_market_data,
 )
-from gold_model_v83 import MODEL_VERSION_V83, decide_v83, fit_v83_system
+from gold_model_v90 import MODEL_VERSION_V90, decide_v90, fit_v90_system
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
 from official_event_calendar_v830 import (
@@ -94,14 +94,14 @@ try:
     with st.spinner("Running Version 9.0 calibrated walk-forward research…"):
         gold, confirmations, source_status = download_intraday_bundle(key)
         validate_market_data(gold, confirmations)
-        result = fit_v83_system(gold, confirmations, splits, cost_bps, threshold)
+        result = fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
         fred, macro_audit = download_fred_macro()
         slow = parse_slow_factor_csv(slow_file) if slow_file else None
         macro = combine_macro_sources(fred, slow)
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
                                         threshold, cost_bps, gold)
         perpetual_consensus = free_perpetual_audit()
-        decision = decide_v83(
+        decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
             major_event=(major_event or automatic_event_lock))
 except Exception as exc:
@@ -272,10 +272,10 @@ elif elliott.adjustment:
 else:
     st.info("Qualified Elliott evidence is neutral; no probability adjustment was applied.")
 
-ledger = ForecastLedgerV83()
+ledger = ForecastLedgerV90()
 settled = ledger.settle(gold)
 ledger.record(
-    model_version=MODEL_VERSION_V83, data_timestamp=result.as_of,
+    model_version=MODEL_VERSION_V90, data_timestamp=result.as_of,
     forecast_timestamp=forecast_time, starting_price=result.spot,
     directional_outlook=decision.candidate, decision=decision.action,
     market_probability_up=result.probability_up,

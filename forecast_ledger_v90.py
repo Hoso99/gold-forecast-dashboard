@@ -4,7 +4,7 @@ import pandas as pd
 from forecast_ledger_v825 import ForecastLedger
 
 
-class ForecastLedgerV83(ForecastLedger):
+class ForecastLedgerV90(ForecastLedger):
     def __init__(self, path="forecast_ledger_v90.sqlite"):
         super().__init__(path)
 
