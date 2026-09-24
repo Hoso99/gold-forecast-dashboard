@@ -1,8 +1,10 @@
 """Free cross-venue XAU perpetual microstructure audit.
 
-This is deliberately labelled as a proxy: Binance, Bybit and OKX XAU-USDT
-perpetuals are not COMEX GC.  Public REST snapshots are used because a
-Streamlit rerun is not a reliable home for permanent WebSocket connections.
+This is deliberately labelled as a proxy: crypto-venue XAU-USDT perpetuals
+are not COMEX GC. Public REST snapshots are used because a Streamlit rerun is
+not a reliable home for permanent WebSocket connections. Binance and Bybit
+remain preferred; BingX and Gate are transparent fallbacks when a hosting
+region cannot reach them.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -39,15 +42,21 @@ class PerpetualConsensus:
     venues: list[VenueAudit]
 
 
-def _get(url: str, timeout: float = 4.0) -> Any:
+def _get(url: str, timeout: float = 3.5) -> Any:
     request = Request(url, headers={"User-Agent": "Gold-Version-9.0/1.0"})
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _level_size(level: Any) -> float:
+    if isinstance(level, dict):
+        return float(level.get("s", level.get("size", level.get("qty", 0))))
+    return float(level[1]) if len(level) >= 2 else 0.0
+
+
 def _imbalance(bids: list, asks: list) -> float:
-    bid = sum(float(level[1]) for level in bids if len(level) >= 2)
-    ask = sum(float(level[1]) for level in asks if len(level) >= 2)
+    bid = sum(_level_size(level) for level in bids)
+    ask = sum(_level_size(level) for level in asks)
     return (bid - ask) / (bid + ask) if bid + ask > 0 else np.nan
 
 
@@ -93,6 +102,43 @@ def parse_okx(book: dict, trades: dict) -> VenueAudit:
                    snapshot.get("asks", []), signed, price)
 
 
+def parse_bingx(book: dict, trades: dict) -> VenueAudit:
+    snapshot = book.get("data") or {}
+    rows = trades.get("data") or []
+    if isinstance(rows, dict):
+        rows = rows.get("trades", rows.get("list", []))
+    signed = []
+    for row in rows:
+        size = float(row.get("qty", row.get("quantity", row.get("size", 0))))
+        maker = row.get("buyerMaker", row.get("isBuyerMaker"))
+        side = str(row.get("side", "")).lower()
+        sign = -1.0 if maker is True or side == "sell" else 1.0
+        signed.append((sign, size))
+    price = float(rows[0].get("price", rows[0].get("p"))) if rows else np.nan
+    return _finish("BingX (fallback)", "XAU-USDT", snapshot.get("bids", []),
+                   snapshot.get("asks", []), signed, price)
+
+
+def parse_gate(book: dict, trades: list[dict]) -> VenueAudit:
+    signed = []
+    for row in trades:
+        raw_size = float(row.get("size", row.get("amount", 0)))
+        side = str(row.get("side", "")).lower()
+        sign = -1.0 if raw_size < 0 or side == "sell" else 1.0
+        signed.append((sign, abs(raw_size)))
+    price = float(trades[0].get("price")) if trades else np.nan
+    return _finish("Gate (fallback)", "XAU_USDT", book.get("bids", []),
+                   book.get("asks", []), signed, price)
+
+
+def _error_detail(exc: Exception) -> str:
+    if isinstance(exc, HTTPError):
+        if exc.code in (403, 451):
+            return f"HTTP {exc.code}: venue blocks this cloud region"
+        return f"HTTP {exc.code}: {exc.reason}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _collect_one(venue: str) -> VenueAudit:
     try:
         if venue == "Binance":
@@ -104,17 +150,46 @@ def _collect_one(venue: str) -> VenueAudit:
             book = _get(base + "/orderbook?category=linear&symbol=XAUUSDT&limit=50")
             trades = _get(base + "/recent-trade?category=linear&symbol=XAUUSDT&limit=100")
             return parse_bybit(book, trades)
-        book = _get("https://www.okx.com/api/v5/market/books?instId=XAU-USDT-SWAP&sz=50")
-        trades = _get("https://www.okx.com/api/v5/market/trades?instId=XAU-USDT-SWAP&limit=100")
-        return parse_okx(book, trades)
+        if venue == "OKX":
+            book = _get("https://www.okx.com/api/v5/market/books?instId=XAU-USDT-SWAP&sz=50")
+            trades = _get("https://www.okx.com/api/v5/market/trades?instId=XAU-USDT-SWAP&limit=100")
+            return parse_okx(book, trades)
+        if venue == "BingX":
+            base = "https://open-api.bingx.com/openApi/swap/v2/quote"
+            book = _get(base + "/depth?symbol=XAU-USDT&limit=50")
+            trades = _get(base + "/trades?symbol=XAU-USDT&limit=100")
+            return parse_bingx(book, trades)
+        base = "https://api.gateio.ws/api/v4/futures/usdt"
+        book = _get(base + "/order_book?contract=XAU_USDT&limit=50")
+        trades = _get(base + "/trades?contract=XAU_USDT&limit=100")
+        return parse_gate(book, trades)
     except Exception as exc:
         return VenueAudit(venue, "UNAVAILABLE", "", np.nan, np.nan, np.nan,
-                          "UNKNOWN", 0, str(exc))
+                          "UNKNOWN", 0, _error_detail(exc))
+
+
+def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
+    primary = _collect_one(preferred)
+    if primary.status == "LIVE" or fallback is None:
+        return primary
+    replacement = _collect_one(fallback)
+    if replacement.status == "LIVE":
+        replacement.detail = f"Used because {preferred} failed: {primary.detail}"
+        return replacement
+    primary.detail = (
+        f"Primary failed: {primary.detail}; {fallback} fallback failed: "
+        f"{replacement.detail}")
+    return primary
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
     with ThreadPoolExecutor(max_workers=3) as pool:
-        venues = list(pool.map(_collect_one, ("Binance", "Bybit", "OKX")))
+        futures = (
+            pool.submit(_collect_slot, "Binance", "BingX"),
+            pool.submit(_collect_slot, "Bybit", "Gate"),
+            pool.submit(_collect_slot, "OKX"),
+        )
+        venues = [future.result() for future in futures]
     live = [venue for venue in venues if venue.status == "LIVE"]
     buys = sum(venue.bias == "BUY PRESSURE" for venue in live)
     sells = sum(venue.bias == "SELL PRESSURE" for venue in live)
@@ -133,5 +208,5 @@ def display_frame(consensus: PerpetualConsensus) -> pd.DataFrame:
         "Venue": v.venue, "Status": v.status, "Contract": v.symbol or "N/A",
         "Last": v.last_price, "Book imbalance": v.book_imbalance,
         "Trade imbalance": v.trade_imbalance, "Pressure": v.bias,
-        "Recent trades": v.observations,
+        "Recent trades": v.observations, "Connection detail": v.detail or "Direct",
     } for v in consensus.venues])
