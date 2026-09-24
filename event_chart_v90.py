@@ -15,12 +15,15 @@ def manual_event_frame(enabled: bool, event_date: date, event_time: time,
         return pd.DataFrame(columns=columns)
     timestamp = pd.Timestamp.combine(event_date, event_time)
     timestamp = timestamp.tz_localize("UTC")
+    names = [item.strip() for item in name.splitlines() if item.strip()]
+    if not names:
+        names = ["Three-star USD event"]
     return pd.DataFrame([{
         "timestamp": timestamp,
         "source": "Investing.com (manual)",
-        "event": name.strip() or "Three-star USD event",
+        "event": item,
         "impact": 3,
-    }], columns=columns)
+    } for item in names], columns=columns)
 
 
 def combine_chart_events(official: pd.DataFrame,
@@ -55,20 +58,23 @@ def event_price_chart(gold: pd.DataFrame, events: pd.DataFrame,
         selected = events[
             (events.timestamp >= start) &
             (events.timestamp <= end + pd.Timedelta(hours=4))].tail(20)
-        for _, event in selected.iterrows():
-            manual = str(event.source).startswith("Investing.com")
+        for timestamp, simultaneous in selected.groupby("timestamp", sort=True):
+            manual = simultaneous.source.astype(str).str.startswith(
+                "Investing.com").any()
             color = "#ffd600" if manual else "#e53935"
             width = 3 if manual else 2
-            label = f"{'★ ★ ★ ' if manual else ''}{event.event} · {event.timestamp:%H:%M GMT}"
+            names = " / ".join(dict.fromkeys(
+                simultaneous.event.astype(str).tolist()))
+            label = f"{'★ ★ ★ ' if manual else ''}{names} · {timestamp:%H:%M GMT}"
             fig.add_vline(
-                x=event.timestamp.to_pydatetime(), line_color=color,
+                x=timestamp.to_pydatetime(), line_color=color,
                 line_width=width, line_dash="solid" if manual else "dash")
             fig.add_annotation(
-                x=event.timestamp.to_pydatetime(), y=1, yref="paper",
+                x=timestamp.to_pydatetime(), y=1, yref="paper",
                 text=label, showarrow=True, arrowhead=2,
                 bgcolor=color, font={"color": "#111", "size": 10},
                 textangle=-90, yanchor="top")
-            visible_end = max(visible_end, event.timestamp)
+            visible_end = max(visible_end, timestamp)
     fig.update_layout(
         height=570, margin={"l": 20, "r": 20, "t": 35, "b": 20},
         xaxis_title="Time (GMT/UTC)", yaxis_title="Gold price (USD)",

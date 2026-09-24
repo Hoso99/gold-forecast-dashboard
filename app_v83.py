@@ -34,8 +34,11 @@ with st.sidebar:
     major_event = st.checkbox(
         "Investing.com 3-star USD event within next hour",
         help="Check this after reviewing the embedded calendar. It blocks forecast release.")
-    manual_event_name = st.text_input(
-        "Event name", "President Trump speech", disabled=not major_event)
+    manual_event_name = st.text_area(
+        "Event names — one per line",
+        "President Trump speech",
+        help="Enter every simultaneous three-star event on a separate line.",
+        disabled=not major_event)
     manual_event_date = st.date_input(
         "Event date (GMT)", value=pd.Timestamp.now(tz="UTC").date(),
         disabled=not major_event)
