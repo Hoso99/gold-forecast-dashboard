@@ -63,10 +63,14 @@ def _download_symbol(api_key: str, symbol: str, outputsize: int) -> pd.DataFrame
     if missing:
         raise RuntimeError(f"{symbol} response is missing: {', '.join(missing)}")
     frame["datetime"] = pd.to_datetime(frame["datetime"], utc=True, errors="coerce")
-    for column in ["open", "high", "low", "close"]:
+    numeric_columns = ["open", "high", "low", "close"]
+    if "volume" in frame:
+        numeric_columns.append("volume")
+    for column in numeric_columns:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame = frame.set_index("datetime").sort_index()[["open", "high", "low", "close"]]
-    return frame[~frame.index.duplicated(keep="last")].dropna()
+    frame = frame.set_index("datetime").sort_index()[numeric_columns]
+    required_values = ["open", "high", "low", "close"]
+    return frame[~frame.index.duplicated(keep="last")].dropna(subset=required_values)
 
 
 def download_market_data(api_key: str, outputsize: int = 5000) -> pd.DataFrame:

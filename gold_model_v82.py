@@ -21,6 +21,7 @@ from gold_model import (
 from gold_model_v8 import *  # noqa: F401,F403 - V8.2 extends the validated V8.1 engines
 
 MODEL_VERSION = "8.2.5-one-hour-structural-behavioral-statistical-research"
+INTRADAY_INTERVAL = "15min"
 INTRADAY_HORIZON_BARS = 4
 INTRADAY_HORIZON_LABEL = "1 hour (4 x 15-minute bars)"
 
@@ -681,19 +682,33 @@ def audit_elliott_overlay(
     min_observations: int = 80,
     min_accuracy: float = 0.53,
     min_lower_bound: float = 0.50,
+    validation_fraction: float = 0.30,
 ) -> tuple[dict, pd.DataFrame]:
+    """Audit Elliott evidence on a chronological, non-overlapping holdout.
+
+    The newest labelled observations are reserved for validation so the
+    qualification gate is not based on the same history used to establish
+    the structure.  This is deliberately conservative: weak or unstable
+    Elliott evidence must remain neutral.
+    """
+    if not 0.20 <= validation_fraction <= 0.50:
+        raise ValueError("validation_fraction must be between 0.20 and 0.50")
     states = causal_elliott_states(gold)
     states["future_return"] = gold.close.shift(-INTRADAY_HORIZON_BARS) / gold.close - 1
     sample = states.iloc[::INTRADAY_HORIZON_BARS].copy()
     sample = sample[(sample.elliott_bias != 0) & sample.future_return.notna()]
     sample["success"] = sample.elliott_bias * sample.future_return > 0
-    total = len(sample)
-    wins = int(sample.success.sum()) if total else 0
+    validation_size = max(min_observations, int(math.ceil(len(sample) * validation_fraction)))
+    validation = sample.tail(min(len(sample), validation_size)).copy()
+    total = len(validation)
+    wins = int(validation.success.sum()) if total else 0
     accuracy = wins / total if total else np.nan
     lower = _wilson_lower(wins, total)
     qualified = bool(total >= min_observations and accuracy >= min_accuracy and lower >= min_lower_bound)
     audit = {"Observations": total, "Accuracy": accuracy,
-             "90% Wilson lower bound": lower, "Qualified": qualified}
+             "90% Wilson lower bound": lower, "Qualified": qualified,
+             "Validation start": validation.index.min() if total else pd.NaT,
+             "Validation end": validation.index.max() if total else pd.NaT}
     return audit, states.join(sample[["success"]], how="left")
 
 
@@ -713,7 +728,9 @@ def apply_elliott_overlay(
     elif bias == 0:
         reasons.append("current swing structure is overlapping or incomplete")
     else:
-        strength = min(1.0, max(0.0, (audit["Accuracy"] - 0.5) / 0.10))
+        # Use the conservative confidence bound, not headline accuracy, to
+        # determine influence.  A marginal pass therefore has little weight.
+        strength = min(1.0, max(0.0, (audit["90% Wilson lower bound"] - 0.50) / 0.08))
         adjustment = float(bias * strength * 0.04)
     probability = float(np.clip(base_probability + adjustment, 0.01, 0.99))
     return ElliottOverlay(
