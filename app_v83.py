@@ -82,18 +82,6 @@ automatic_event_lock, nearby_official_events = official_event_risk(
 @st.cache_data(ttl=15, show_spinner=False)
 def free_perpetual_audit():
     return collect_free_perpetual_consensus()
-if automatic_event_lock:
-    st.error(
-        "Official calendar lockout is active: a high-impact event is within "
-        "60 minutes before or 30 minutes after release.")
-    st.dataframe(
-        format_events_gmt(nearby_official_events),
-        hide_index=True, width="stretch")
-elif official_audit.Status.astype(str).str.startswith("unavailable").any():
-    st.warning(
-        "One or more official calendars are unavailable. Review Investing.com "
-        "and use the manual three-star event checkbox.")
-
 if not run:
     st.info("Run after a completed 15-minute candle. Version 8.2.5 remains unchanged on port 8502.")
     st.stop()
@@ -124,178 +112,190 @@ except Exception as exc:
     st.error(f"Version 9.0 could not run: {exc}")
     st.stop()
 
-notice_state, notice_events = event_risk_notice(chart_events)
-if major_event and notice_state == "CLEAR":
-    notice_state = "ELEVATED"
-if notice_state == "LOCKOUT":
-    st.error(
-        "SPIKE RISK — EVENT LOCKOUT. A high-impact official release is "
-        "imminent or has just occurred. Direction is unknown; expect possible "
-        "spread widening, slippage and rapid price movement.")
-    st.dataframe(
-        format_events_gmt(notice_events), hide_index=True, width="stretch")
-elif notice_state == "ELEVATED":
-    st.warning(
-        "ELEVATED SPIKE RISK — PREPARE. A high-impact event is approaching "
-        "within four hours, or you manually flagged a three-star "
-        "Investing.com event. This is a volatility warning, not a direction signal.")
-    if not notice_events.empty:
+decision_tab, events_tab, pressure_tab, validation_tab, ledger_tab = st.tabs([
+    "Decision", "Events & Chart", "Market Pressure",
+    "Validation", "Forecast Ledger",
+])
+
+with events_tab:
+    if official_audit.Status.astype(str).str.startswith("unavailable").any():
+        st.warning(
+            "One or more official calendars are unavailable. Review "
+            "Investing.com and use the manual three-star event control.")
+    notice_state, notice_events = event_risk_notice(chart_events)
+    if major_event and notice_state == "CLEAR":
+        notice_state = "ELEVATED"
+    if notice_state == "LOCKOUT":
+        st.error(
+            "SPIKE RISK — EVENT LOCKOUT. A high-impact official release is "
+            "imminent or has just occurred. Direction is unknown; expect possible "
+            "spread widening, slippage and rapid price movement.")
         st.dataframe(
             format_events_gmt(notice_events), hide_index=True, width="stretch")
-    if major_event and notice_events.empty:
-        st.info(
-            "Manual Investing.com flag is active. Confirm the event name, "
-            "three-star importance and GMT time in the embedded calendar.")
-else:
-    st.success(
-        "No scheduled high-impact BLS, BEA or Federal Reserve event was found "
-        "in the next four hours. Unscheduled breaking-news spikes remain possible.")
-
-st.subheader("Gold chart with high-impact event markers")
-st.plotly_chart(
-    event_price_chart(gold, chart_events), width="stretch",
-    config={"displaylogo": False})
-st.caption(
-    "Yellow = manually confirmed Investing.com three-star event. "
-    "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
-
-st.subheader("Free three-venue XAU perpetual consensus")
-p1, p2, p3, p4 = st.columns(4)
-p1.metric("Feed status", perpetual_consensus.status)
-p2.metric("Live venues", f"{perpetual_consensus.live_venues}/3")
-p3.metric("Consensus", perpetual_consensus.direction)
-p4.metric("Agreement", f"{perpetual_consensus.agreement}/3 · {perpetual_consensus.confidence}")
-perpetual_table = perpetual_display_frame(perpetual_consensus)
-st.dataframe(
-    perpetual_table,
-    column_config={
-        "Last": st.column_config.NumberColumn(format="%.2f"),
-        "Book imbalance": st.column_config.NumberColumn(format="%+.1%%"),
-        "Trade imbalance": st.column_config.NumberColumn(format="%+.1%%"),
-    }, hide_index=True, width="stretch")
-if perpetual_consensus.agreement == 3:
-    st.warning(
-        f"THREE-VENUE {perpetual_consensus.direction}: Binance, Bybit and OKX "
-        "currently agree. Treat this as a real-time liquidity warning, not a trade instruction.")
-elif perpetual_consensus.agreement == 2:
-    st.info(
-        f"TWO-VENUE {perpetual_consensus.direction}: confirmation is moderate; "
-        "one venue is neutral, opposed or unavailable.")
-else:
-    st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
-st.caption(
-    "Free public Binance XAUUSDT, Bybit XAUUSDT and OKX XAU-USDT-SWAP "
-    "snapshots. These are synthetic perpetual proxies—not COMEX GC—and have "
-    "zero forecast weight until timestamped out-of-sample validation passes.")
-
-st.subheader("Institutional liquidity and accumulation audit")
-institutional = result.institutional_audit
-i1, i2, i3, i4, i5 = st.columns(5)
-i1.metric("Range state", institutional.accumulation_state)
-i2.metric("Accumulation score", (
-    f"{institutional.compression_percentile:.0%}"
-    if pd.notna(institutional.compression_percentile) else "N/A"))
-i3.metric("Nearest liquidity proxy", institutional.nearest_liquidity)
-i4.metric("Distance", (
-    f"{institutional.liquidity_distance_pct:.2%}"
-    if pd.notna(institutional.liquidity_distance_pct) else "N/A"))
-i5.metric("Volume profile", institutional.volume_status)
-if institutional.volume_status == "AVAILABLE":
+    elif notice_state == "ELEVATED":
+        st.warning(
+            "ELEVATED SPIKE RISK — PREPARE. A high-impact event is approaching "
+            "within four hours, or you manually flagged a three-star "
+            "Investing.com event. This is a volatility warning, not a direction signal.")
+        if not notice_events.empty:
+            st.dataframe(
+                format_events_gmt(notice_events), hide_index=True, width="stretch")
+        if major_event and notice_events.empty:
+            st.info(
+                "Manual Investing.com flag is active. Confirm the event name, "
+                "three-star importance and GMT time in the embedded calendar.")
+    else:
+        st.success(
+            "No scheduled high-impact BLS, BEA or Federal Reserve event was found "
+            "in the next four hours. Unscheduled breaking-news spikes remain possible.")
+    
+    st.subheader("Gold chart with high-impact event markers")
+    st.plotly_chart(
+        event_price_chart(gold, chart_events), width="stretch",
+        config={"displaylogo": False})
     st.caption(
-        f"POC USD {institutional.poc:,.2f} | "
-        f"Value area USD {institutional.value_area_low:,.2f}–"
-        f"{institutional.value_area_high:,.2f}")
-else:
-    st.info(
-        "POC/VAH/VAL are inactive because the current spot source does not "
-        "supply verified traded volume. No synthetic volume was created.")
-st.caption(" · ".join(institutional.reasons))
-
-st.subheader("Historical catalyst playbook")
-playbook = catalyst_playbook(gold, official_events)
-if playbook.empty or not playbook.Qualified.any():
-    st.info(
-        "No event type has at least 20 aligned historical releases in the "
-        "loaded official calendar. Event direction remains UNKNOWN; calendar "
-        "timing still activates the volatility lockout.")
-else:
-    st.dataframe(playbook, hide_index=True, width="stretch")
-
-lower, median, upper = price_interval(result)
-forecast_time = result.as_of + pd.Timedelta(hours=1)
-st.subheader("Version 9.0 decision")
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-c1.metric("Macro regime", decision.macro_regime)
-c2.metric("Timing candidate", decision.candidate)
-c3.metric("Risk-controlled action", decision.action)
-c4.metric("Probability up", f"{elliott.probability_up:.1%}")
-c5.metric("Predicted price in 1 hour", f"USD {median:,.2f}")
-c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
-st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%m-%d %H:%M UTC} | Spot USD {result.spot:,.2f}")
-if decision.reasons:
-    st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")
-
-st.subheader("Sudden-movement audit")
-shock = result.shock_audit
-s1, s2, s3, s4, s5 = st.columns(5)
-s1.metric("Shock regime", "ACTIVE" if shock["active"] else "NORMAL")
-s2.metric("Robust jump score", (
-    f'{shock["z_score"]:.1f}σ' if pd.notna(shock["z_score"]) else "N/A"))
-s3.metric("Range expansion", (
-    f'{shock["range_ratio"]:.1f}×' if pd.notna(shock["range_ratio"]) else "N/A"))
-s4.metric("Cross-asset shocks", shock["cross_asset_shocks"])
-s5.metric("Bars since shock", (
-    shock["bars_since_shock"] if shock["bars_since_shock"] is not None else "None"))
-if shock["active"]:
-    st.error("Forecast release is blocked during the four-candle post-shock cooldown. Run again after volatility normalizes.")
-else:
-    st.caption("Causal robust-volatility and range detector; thresholds use only candles completed before the candle being tested.")
-
-st.subheader("Technical-rejection audit")
-rejection = result.rejection_audit
-r1, r2, r3, r4, r5 = st.columns(5)
-r1.metric("Current rejection", rejection["current_bias"])
-r2.metric("Holdout cases", rejection["observations"])
-r3.metric("Holdout accuracy", (
-    f'{rejection["accuracy"]:.1%}'
-    if pd.notna(rejection["accuracy"]) else "N/A"))
-r4.metric("Profit factor", (
-    f'{rejection["profit_factor"]:.2f}'
-    if pd.notna(rejection["profit_factor"]) and
-       rejection["profit_factor"] != float("inf") else
-    "∞" if rejection["profit_factor"] == float("inf") else "N/A"))
-r5.metric("Reliability gate", (
-    "PASS" if rejection["qualified"] else "FAIL"))
-st.caption(
-    f'90% Wilson lower bound: '
-    f'{rejection["lower_bound"]:.1%}' if
-    pd.notna(rejection["lower_bound"]) else
-    "90% Wilson lower bound: N/A")
-if not rejection["qualified"]:
-    st.info("Technical rejection has zero model weight until at least 30 holdout cases pass accuracy, confidence and cost-aware profit-factor gates.")
-elif result.rejection_adjustment:
-    st.success(
-        f'Qualified rejection adjusted probability by '
-        f'{result.rejection_adjustment:+.1%}.')
-
-st.subheader("Elliott Wave audit")
-e1, e2, e3, e4, e5 = st.columns(5)
-e1.metric("Current bias", elliott.current_bias)
-e2.metric("Current structure", elliott.current_structure)
-e3.metric("Probability adjustment", f"{elliott.adjustment:+.1%}")
-e4.metric("Holdout accuracy", f"{elliott.accuracy:.1%}")
-e5.metric("Reliability gate", "PASS" if elliott.qualified else "FAIL")
-st.caption(
-    f"Causal confirmed-pivot evidence | Holdout observations: {elliott.observations:,} | "
-    f"90% Wilson lower bound: {elliott.lower_bound:.1%}"
-)
-if elliott.reasons:
-    st.info("Elliott evidence not applied: " + "; ".join(elliott.reasons) + ".")
-elif elliott.adjustment:
-    st.success(f"Qualified Elliott evidence adjusted probability by {elliott.adjustment:+.1%}.")
-else:
-    st.info("Qualified Elliott evidence is neutral; no probability adjustment was applied.")
-
+        "Yellow = manually confirmed Investing.com three-star event. "
+        "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
+    
+with pressure_tab:
+    st.subheader("Free three-venue XAU perpetual consensus")
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("Feed status", perpetual_consensus.status)
+    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/3")
+    p3.metric("Consensus", perpetual_consensus.direction)
+    p4.metric("Agreement", f"{perpetual_consensus.agreement}/3 · {perpetual_consensus.confidence}")
+    perpetual_table = perpetual_display_frame(perpetual_consensus)
+    st.dataframe(
+        perpetual_table,
+        column_config={
+            "Last": st.column_config.NumberColumn(format="%.2f"),
+            "Book imbalance": st.column_config.NumberColumn(format="%+.1%%"),
+            "Trade imbalance": st.column_config.NumberColumn(format="%+.1%%"),
+        }, hide_index=True, width="stretch")
+    if perpetual_consensus.agreement == 3:
+        st.warning(
+            f"THREE-VENUE {perpetual_consensus.direction}: Binance, Bybit and OKX "
+            "currently agree. Treat this as a real-time liquidity warning, not a trade instruction.")
+    elif perpetual_consensus.agreement == 2:
+        st.info(
+            f"TWO-VENUE {perpetual_consensus.direction}: confirmation is moderate; "
+            "one venue is neutral, opposed or unavailable.")
+    else:
+        st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
+    st.caption(
+        "Free public Binance XAUUSDT, Bybit XAUUSDT and OKX XAU-USDT-SWAP "
+        "snapshots. These are synthetic perpetual proxies—not COMEX GC—and have "
+        "zero forecast weight until timestamped out-of-sample validation passes.")
+    
+    st.subheader("Institutional liquidity and accumulation audit")
+    institutional = result.institutional_audit
+    i1, i2, i3, i4, i5 = st.columns(5)
+    i1.metric("Range state", institutional.accumulation_state)
+    i2.metric("Accumulation score", (
+        f"{institutional.compression_percentile:.0%}"
+        if pd.notna(institutional.compression_percentile) else "N/A"))
+    i3.metric("Nearest liquidity proxy", institutional.nearest_liquidity)
+    i4.metric("Distance", (
+        f"{institutional.liquidity_distance_pct:.2%}"
+        if pd.notna(institutional.liquidity_distance_pct) else "N/A"))
+    i5.metric("Volume profile", institutional.volume_status)
+    if institutional.volume_status == "AVAILABLE":
+        st.caption(
+            f"POC USD {institutional.poc:,.2f} | "
+            f"Value area USD {institutional.value_area_low:,.2f}–"
+            f"{institutional.value_area_high:,.2f}")
+    else:
+        st.info(
+            "POC/VAH/VAL are inactive because the current spot source does not "
+            "supply verified traded volume. No synthetic volume was created.")
+    st.caption(" · ".join(institutional.reasons))
+    
+    st.subheader("Historical catalyst playbook")
+    playbook = catalyst_playbook(gold, official_events)
+    if playbook.empty or not playbook.Qualified.any():
+        st.info(
+            "No event type has at least 20 aligned historical releases in the "
+            "loaded official calendar. Event direction remains UNKNOWN; calendar "
+            "timing still activates the volatility lockout.")
+    else:
+        st.dataframe(playbook, hide_index=True, width="stretch")
+    
+with decision_tab:
+    lower, median, upper = price_interval(result)
+    forecast_time = result.as_of + pd.Timedelta(hours=1)
+    st.subheader("Version 9.0 decision")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Macro regime", decision.macro_regime)
+    c2.metric("Timing candidate", decision.candidate)
+    c3.metric("Risk-controlled action", decision.action)
+    c4.metric("Probability up", f"{elliott.probability_up:.1%}")
+    c5.metric("Predicted price in 1 hour", f"USD {median:,.2f}")
+    c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
+    st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%m-%d %H:%M UTC} | Spot USD {result.spot:,.2f}")
+    if decision.reasons:
+        st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")
+    
+    st.subheader("Sudden-movement audit")
+    shock = result.shock_audit
+    s1, s2, s3, s4, s5 = st.columns(5)
+    s1.metric("Shock regime", "ACTIVE" if shock["active"] else "NORMAL")
+    s2.metric("Robust jump score", (
+        f'{shock["z_score"]:.1f}σ' if pd.notna(shock["z_score"]) else "N/A"))
+    s3.metric("Range expansion", (
+        f'{shock["range_ratio"]:.1f}×' if pd.notna(shock["range_ratio"]) else "N/A"))
+    s4.metric("Cross-asset shocks", shock["cross_asset_shocks"])
+    s5.metric("Bars since shock", (
+        shock["bars_since_shock"] if shock["bars_since_shock"] is not None else "None"))
+    if shock["active"]:
+        st.error("Forecast release is blocked during the four-candle post-shock cooldown. Run again after volatility normalizes.")
+    else:
+        st.caption("Causal robust-volatility and range detector; thresholds use only candles completed before the candle being tested.")
+    
+    st.subheader("Technical-rejection audit")
+    rejection = result.rejection_audit
+    r1, r2, r3, r4, r5 = st.columns(5)
+    r1.metric("Current rejection", rejection["current_bias"])
+    r2.metric("Holdout cases", rejection["observations"])
+    r3.metric("Holdout accuracy", (
+        f'{rejection["accuracy"]:.1%}'
+        if pd.notna(rejection["accuracy"]) else "N/A"))
+    r4.metric("Profit factor", (
+        f'{rejection["profit_factor"]:.2f}'
+        if pd.notna(rejection["profit_factor"]) and
+           rejection["profit_factor"] != float("inf") else
+        "∞" if rejection["profit_factor"] == float("inf") else "N/A"))
+    r5.metric("Reliability gate", (
+        "PASS" if rejection["qualified"] else "FAIL"))
+    st.caption(
+        f'90% Wilson lower bound: '
+        f'{rejection["lower_bound"]:.1%}' if
+        pd.notna(rejection["lower_bound"]) else
+        "90% Wilson lower bound: N/A")
+    if not rejection["qualified"]:
+        st.info("Technical rejection has zero model weight until at least 30 holdout cases pass accuracy, confidence and cost-aware profit-factor gates.")
+    elif result.rejection_adjustment:
+        st.success(
+            f'Qualified rejection adjusted probability by '
+            f'{result.rejection_adjustment:+.1%}.')
+    
+    st.subheader("Elliott Wave audit")
+    e1, e2, e3, e4, e5 = st.columns(5)
+    e1.metric("Current bias", elliott.current_bias)
+    e2.metric("Current structure", elliott.current_structure)
+    e3.metric("Probability adjustment", f"{elliott.adjustment:+.1%}")
+    e4.metric("Holdout accuracy", f"{elliott.accuracy:.1%}")
+    e5.metric("Reliability gate", "PASS" if elliott.qualified else "FAIL")
+    st.caption(
+        f"Causal confirmed-pivot evidence | Holdout observations: {elliott.observations:,} | "
+        f"90% Wilson lower bound: {elliott.lower_bound:.1%}"
+    )
+    if elliott.reasons:
+        st.info("Elliott evidence not applied: " + "; ".join(elliott.reasons) + ".")
+    elif elliott.adjustment:
+        st.success(f"Qualified Elliott evidence adjusted probability by {elliott.adjustment:+.1%}.")
+    else:
+        st.info("Qualified Elliott evidence is neutral; no probability adjustment was applied.")
+    
 ledger = ForecastLedgerV83()
 settled = ledger.settle(gold)
 ledger.record(
@@ -311,96 +311,98 @@ ledger.record(
 if settled:
     st.success(f"Settled {settled} previous Version 9.0 forecast(s).")
 
-st.subheader("Live forecast settlement performance")
-live = ledger.live_performance(cost_bps=cost_bps)
-l1, l2, l3, l4, l5, l6 = st.columns(6)
-l1.metric("Validation gate", live["status"])
-l2.metric("Settled", live["settled"])
-l3.metric("Direction accuracy", (
-    f'{live["direction_accuracy"]:.1%}'
-    if pd.notna(live["direction_accuracy"]) else "N/A"))
-l4.metric("Live Brier score", (
-    f'{live["brier_score"]:.3f}' if pd.notna(live["brier_score"]) else "N/A"))
-l5.metric("80% range coverage", (
-    f'{live["interval_coverage"]:.1%}'
-    if pd.notna(live["interval_coverage"]) else "N/A"))
-l6.metric("Median price error", (
-    f'USD {live["median_absolute_error"]:,.2f}'
-    if pd.notna(live["median_absolute_error"]) else "N/A"))
-st.caption(
-    f'Executed decisions: {live["executed"]} | Non-overlapping trades: '
-    f'{live["non_overlapping_trades"]} | Cost-aware net return: '
-    f'{live["net_return"]:.1%} | Profit factor: '
-    f'{live["profit_factor"]:.2f}' if pd.notna(live["profit_factor"]) else
-    f'Executed decisions: {live["executed"]} | Non-overlapping trades: '
-    f'{live["non_overlapping_trades"]} | Cost-aware net return: '
-    f'{live["net_return"]:.1%} | Profit factor: N/A')
-if live["status"] == "INSUFFICIENT":
-    st.info("Live validation needs at least 30 settled directional forecasts. It is not replaced by backtest performance.")
-elif live["status"] == "FAIL":
-    st.warning("Live forecasts have not passed the accuracy, calibration and interval-coverage gate.")
-else:
-    st.success("Live forecasts passed the minimum settlement validation gate; continue monitoring for stability.")
-calibration = ledger.calibration_table()
-if not calibration.empty:
-    calibration_display = calibration.copy()
-    for column in ("Mean probability", "Observed up frequency"):
-        calibration_display[column] = calibration_display[column].map(
-            lambda value: f"{value:.1%}")
-    calibration_display["Calibration gap"] = calibration_display[
-        "Calibration gap"].map(lambda value: f"{value:+.1%}")
-    st.dataframe(calibration_display, hide_index=True, width="stretch")
-
-st.subheader("Non-overlapping cost-aware evaluation")
-rows = []
-for name, value in decision.evaluation.items():
-    if name in {"Win rate", "Net return", "Max drawdown"} and pd.notna(value):
-        shown = f"{value:.1%}"
-    elif pd.isna(value):
-        shown = "N/A"
-    elif value == float("inf"):
-        shown = "∞"
+with validation_tab:
+    st.subheader("Live forecast settlement performance")
+    live = ledger.live_performance(cost_bps=cost_bps)
+    l1, l2, l3, l4, l5, l6 = st.columns(6)
+    l1.metric("Validation gate", live["status"])
+    l2.metric("Settled", live["settled"])
+    l3.metric("Direction accuracy", (
+        f'{live["direction_accuracy"]:.1%}'
+        if pd.notna(live["direction_accuracy"]) else "N/A"))
+    l4.metric("Live Brier score", (
+        f'{live["brier_score"]:.3f}' if pd.notna(live["brier_score"]) else "N/A"))
+    l5.metric("80% range coverage", (
+        f'{live["interval_coverage"]:.1%}'
+        if pd.notna(live["interval_coverage"]) else "N/A"))
+    l6.metric("Median price error", (
+        f'USD {live["median_absolute_error"]:,.2f}'
+        if pd.notna(live["median_absolute_error"]) else "N/A"))
+    st.caption(
+        f'Executed decisions: {live["executed"]} | Non-overlapping trades: '
+        f'{live["non_overlapping_trades"]} | Cost-aware net return: '
+        f'{live["net_return"]:.1%} | Profit factor: '
+        f'{live["profit_factor"]:.2f}' if pd.notna(live["profit_factor"]) else
+        f'Executed decisions: {live["executed"]} | Non-overlapping trades: '
+        f'{live["non_overlapping_trades"]} | Cost-aware net return: '
+        f'{live["net_return"]:.1%} | Profit factor: N/A')
+    if live["status"] == "INSUFFICIENT":
+        st.info("Live validation needs at least 30 settled directional forecasts. It is not replaced by backtest performance.")
+    elif live["status"] == "FAIL":
+        st.warning("Live forecasts have not passed the accuracy, calibration and interval-coverage gate.")
     else:
-        shown = f"{value:.3f}"
-    rows.append({"Metric": name, "Result": shown})
-st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-
-st.subheader("Walk-forward out-of-sample performance")
-st.dataframe(pd.DataFrame([
-    {"Model": "Version 9.0", "ROC-AUC": result.metrics.get("ROC-AUC"),
-     "Brier score": result.metrics.get("Brier score")},
-    {"Model": "Version 8.2.5 champion",
-     "ROC-AUC": result.baseline_metrics.get("Champion ROC-AUC"),
-     "Brier score": result.baseline_metrics.get("Champion Brier score")},
-]), hide_index=True, width="stretch")
-st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.0 abstains unless it beats 8.2.5 on both.")
-st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
-
-st.subheader("Version 9.0 forecast ledger")
-history = ledger.frame()
-st.dataframe(history, hide_index=True, width="stretch")
-st.download_button("Download Version 9.0 ledger (CSV)", history.to_csv(index=False).encode(),
-                   "gold_v90_forecast_ledger.csv", "text/csv")
-
-st.subheader("Technical indicators and previous-session pivots")
-technical = technical_snapshot(gold)
-st.dataframe(pd.DataFrame([{"Measure": key, "Value": value} for key, value in technical.items()]),
-             hide_index=True, width="stretch")
-
-st.subheader("Macro release audit")
-st.dataframe(macro_audit, hide_index=True, width="stretch")
-st.caption("Slow factors classify regime at their true release frequency; they do not create synthetic 15-minute releases.")
-st.caption(
-    "Investing.com calendar values are displayed through its official widget "
-    "and are not scraped, copied or stored by Version 9.0.0.")
-
-st.subheader("Official event-calendar audit")
-st.dataframe(official_audit, hide_index=True, width="stretch")
-upcoming = official_events[
-    official_events.timestamp >= pd.Timestamp.now(tz="UTC")].head(10)
-st.dataframe(format_events_gmt(upcoming), hide_index=True, width="stretch")
-st.caption(
-    "Authoritative times: BLS CPI/payrolls/PPI; BEA GDP/PCE/trade; "
-    "Federal Reserve FOMC, minutes, speeches, press conferences and Beige Book. "
-    "All displayed times are GMT. Lockout: 60 minutes before through "
-    "30 minutes after; elevated preparation window: four hours.")
+        st.success("Live forecasts passed the minimum settlement validation gate; continue monitoring for stability.")
+    calibration = ledger.calibration_table()
+    if not calibration.empty:
+        calibration_display = calibration.copy()
+        for column in ("Mean probability", "Observed up frequency"):
+            calibration_display[column] = calibration_display[column].map(
+                lambda value: f"{value:.1%}")
+        calibration_display["Calibration gap"] = calibration_display[
+            "Calibration gap"].map(lambda value: f"{value:+.1%}")
+        st.dataframe(calibration_display, hide_index=True, width="stretch")
+    
+    st.subheader("Non-overlapping cost-aware evaluation")
+    rows = []
+    for name, value in decision.evaluation.items():
+        if name in {"Win rate", "Net return", "Max drawdown"} and pd.notna(value):
+            shown = f"{value:.1%}"
+        elif pd.isna(value):
+            shown = "N/A"
+        elif value == float("inf"):
+            shown = "∞"
+        else:
+            shown = f"{value:.3f}"
+        rows.append({"Metric": name, "Result": shown})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    
+    st.subheader("Walk-forward out-of-sample performance")
+    st.dataframe(pd.DataFrame([
+        {"Model": "Version 9.0", "ROC-AUC": result.metrics.get("ROC-AUC"),
+         "Brier score": result.metrics.get("Brier score")},
+        {"Model": "Version 8.2.5 champion",
+         "ROC-AUC": result.baseline_metrics.get("Champion ROC-AUC"),
+         "Brier score": result.baseline_metrics.get("Champion Brier score")},
+    ]), hide_index=True, width="stretch")
+    st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.0 abstains unless it beats 8.2.5 on both.")
+    st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
+    
+with ledger_tab:
+    st.subheader("Version 9.0 forecast ledger")
+    history = ledger.frame()
+    st.dataframe(history, hide_index=True, width="stretch")
+    st.download_button("Download Version 9.0 ledger (CSV)", history.to_csv(index=False).encode(),
+                       "gold_v90_forecast_ledger.csv", "text/csv")
+    
+    st.subheader("Technical indicators and previous-session pivots")
+    technical = technical_snapshot(gold)
+    st.dataframe(pd.DataFrame([{"Measure": key, "Value": value} for key, value in technical.items()]),
+                 hide_index=True, width="stretch")
+    
+    st.subheader("Macro release audit")
+    st.dataframe(macro_audit, hide_index=True, width="stretch")
+    st.caption("Slow factors classify regime at their true release frequency; they do not create synthetic 15-minute releases.")
+    st.caption(
+        "Investing.com calendar values are displayed through its official widget "
+        "and are not scraped, copied or stored by Version 9.0.0.")
+    
+    st.subheader("Official event-calendar audit")
+    st.dataframe(official_audit, hide_index=True, width="stretch")
+    upcoming = official_events[
+        official_events.timestamp >= pd.Timestamp.now(tz="UTC")].head(10)
+    st.dataframe(format_events_gmt(upcoming), hide_index=True, width="stretch")
+    st.caption(
+        "Authoritative times: BLS CPI/payrolls/PPI; BEA GDP/PCE/trade; "
+        "Federal Reserve FOMC, minutes, speeches, press conferences and Beige Book. "
+        "All displayed times are GMT. Lockout: 60 minutes before through "
+        "30 minutes after; elevated preparation window: four hours.")
