@@ -17,7 +17,7 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.5-institutional-liquidity-proxy-research"
+MODEL_VERSION_V90 = "9.2-six-venue-order-flow-research"
 
 
 def download_five_minute_gold(api_key, outputsize=5000):
@@ -680,12 +680,21 @@ def combined_directional_lean(result, macro, technical,
         result.median_return / max(abs(result.median_return), .0015), -1, 1))
     microstructure = 0.0
     micro_weight = 0.0
+    pressure_indication = "WAIT"
     if perpetual_consensus is not None and perpetual_consensus.agreement >= 2:
         microstructure = float(getattr(
             perpetual_consensus, "pressure_score",
             1.0 if perpetual_consensus.direction == "BUY PRESSURE" else
             -1.0 if perpetual_consensus.direction == "SELL PRESSURE" else 0.0))
-        micro_weight = .10 * perpetual_consensus.agreement / 3
+        pressure_indication = getattr(
+            perpetual_consensus, "order_flow_decision", "WAIT")
+        # Cross-venue executed flow is the priority timing input when the feed
+        # passes its coverage/agreement gate. It remains a proxy, not COMEX GC.
+        pressure_confidence = getattr(perpetual_consensus, "confidence", "LOW")
+        micro_weight = (
+            .40 if pressure_confidence == "HIGH"
+            else .25 if pressure_confidence == "MODERATE"
+            else .10)
     values = {
         "Statistical forecast": statistical,
         "Short-term technical": float(technical["score"]),
@@ -695,10 +704,10 @@ def combined_directional_lean(result, macro, technical,
         "Institutional liquidity proxy": institutional_liquidity_score(institutional),
     }
     weights = {
-        "Statistical forecast": .35,
-        "Short-term technical": .35,
-        "Expected price move": .15,
-        "Slow macro background": .10,
+        "Statistical forecast": .25,
+        "Short-term technical": .15,
+        "Expected price move": .10,
+        "Slow macro background": .05,
         "Perpetual pressure proxy": micro_weight,
         "Institutional liquidity proxy": .05,
     }
@@ -716,6 +725,8 @@ def combined_directional_lean(result, macro, technical,
         "lean": lean, "score": score, "confidence": confidence,
         "aligned": aligned, "active": active,
         "components": values, "weights": weights,
+        "pressure_indication": pressure_indication,
+        "pressure_priority": pressure_indication in {"BUY", "SELL"},
         "actionable": False,
     }
 
@@ -791,7 +802,7 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
         if candidate == "SELL" and technical["trend"] == "UPTREND":
             reasons.append("SELL candidate conflicts with the short-term uptrend")
     if (perpetual_consensus is not None and
-            perpetual_consensus.agreement == 3 and candidate != "NO EDGE"):
+            perpetual_consensus.confidence == "HIGH" and candidate != "NO EDGE"):
         proxy_side = getattr(perpetual_consensus, "order_flow_decision", None)
         if proxy_side == "WAIT":
             proxy_side = None

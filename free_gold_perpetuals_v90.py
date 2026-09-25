@@ -11,6 +11,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
+import math
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -66,6 +67,8 @@ def _imbalance(bids: list, asks: list) -> float:
 
 def _finish(venue: str, symbol: str, bids: list, asks: list,
             signed_sizes: list[tuple[float, float]], price: float) -> VenueAudit:
+    if not bids or not asks or not signed_sizes:
+        raise ValueError("order book or recent trades are empty")
     book = _imbalance(bids, asks)
     bought = sum(size for sign, size in signed_sizes if sign > 0)
     sold = sum(size for sign, size in signed_sizes if sign < 0)
@@ -135,6 +138,37 @@ def parse_gate(book: dict, trades: list[dict]) -> VenueAudit:
                    book.get("asks", []), signed, price)
 
 
+def parse_mexc(book: dict, trades: dict, symbol: str = "GOLD_USDT") -> VenueAudit:
+    depth = book.get("data", book)
+    rows = trades.get("data", [])
+    signed = [(1.0 if int(row.get("T", 0)) == 1 else -1.0,
+               float(row["v"])) for row in rows if int(row.get("T", 0)) in (1, 2)]
+    price = float(rows[0]["p"]) if rows else np.nan
+    return _finish("MEXC", symbol, depth.get("bids", []), depth.get("asks", []),
+                   signed, price)
+
+
+def parse_bitget(book: dict, trades: dict, symbol: str = "XAUTUSDT") -> VenueAudit:
+    depth = book.get("data", {})
+    rows = trades.get("data", [])
+    signed = [(1.0 if str(row.get("side", "")).lower() == "buy" else -1.0,
+               float(row["size"])) for row in rows]
+    price = float(rows[0]["price"]) if rows else np.nan
+    return _finish("Bitget", symbol, depth.get("b", []), depth.get("a", []),
+                   signed, price)
+
+
+def parse_phemex(book: dict, trades: dict, symbol: str = "XAUUSDT") -> VenueAudit:
+    depth = book.get("result", {}).get("book", {})
+    rows = trades.get("result", {}).get("trades", [])
+    signed = [(1.0 if str(row[1]).lower() == "buy" else -1.0, float(row[3]))
+              for row in rows if len(row) >= 4]
+    # Phemex legacy priceEp uses 1e-4 price units for most quoted contracts.
+    price = float(rows[0][2]) / 10_000 if rows else np.nan
+    return _finish("Phemex", symbol, depth.get("bids", []), depth.get("asks", []),
+                   signed, price)
+
+
 def _error_detail(exc: Exception) -> str:
     if isinstance(exc, HTTPError):
         if exc.code in (403, 451):
@@ -163,6 +197,39 @@ def _collect_one(venue: str) -> VenueAudit:
             book = _get(base + "/depth?symbol=XAU-USDT&limit=50")
             trades = _get(base + "/trades?symbol=XAU-USDT&limit=100")
             return parse_bingx(book, trades)
+        if venue == "MEXC":
+            base = "https://contract.mexc.com/api/v1/contract"
+            last_error = None
+            for symbol in ("GOLD_USDT", "XAU_USDT"):
+                try:
+                    return parse_mexc(
+                        _get(f"{base}/depth/{symbol}?limit=50"),
+                        _get(f"{base}/deals/{symbol}?limit=100"), symbol)
+                except Exception as exc:
+                    last_error = exc
+            raise last_error or ValueError("no supported gold contract")
+        if venue == "Bitget":
+            base = "https://api.bitget.com/api/v3/market"
+            last_error = None
+            for symbol in ("XAUUSDT", "GOLDUSDT", "XAUTUSDT"):
+                try:
+                    query = f"category=USDT-FUTURES&symbol={symbol}&limit="
+                    return parse_bitget(
+                        _get(f"{base}/orderbook?{query}50"),
+                        _get(f"{base}/fills?{query}100"), symbol)
+                except Exception as exc:
+                    last_error = exc
+            raise last_error or ValueError("no supported gold contract")
+        if venue == "Phemex":
+            last_error = None
+            for symbol in ("XAUUSDT", "GOLDUSDT", "XAUUSD"):
+                try:
+                    return parse_phemex(
+                        _get(f"https://api.phemex.com/md/orderbook?symbol={symbol}"),
+                        _get(f"https://api.phemex.com/md/trade?symbol={symbol}"), symbol)
+                except Exception as exc:
+                    last_error = exc
+            raise last_error or ValueError("no supported gold contract")
         base = "https://api.gateio.ws/api/v4/futures/usdt"
         book = _get(base + "/order_book?contract=XAU_USDT&limit=50")
         trades = _get(base + "/trades?contract=XAU_USDT&limit=100")
@@ -187,22 +254,27 @@ def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures = (
             pool.submit(_collect_slot, "Binance", "BingX"),
             pool.submit(_collect_slot, "Bybit", "Gate"),
             pool.submit(_collect_slot, "OKX"),
+            pool.submit(_collect_slot, "MEXC"),
+            pool.submit(_collect_slot, "Bitget"),
+            pool.submit(_collect_slot, "Phemex"),
         )
         venues = [future.result() for future in futures]
     live = [venue for venue in venues if venue.status == "LIVE"]
     buys = sum(venue.bias == "BUY PRESSURE" for venue in live)
     sells = sum(venue.bias == "SELL PRESSURE" for venue in live)
     agreement = max(buys, sells)
-    direction = "BUY PRESSURE" if buys >= 2 and buys > sells else (
-        "SELL PRESSURE" if sells >= 2 and sells > buys else "NO CONSENSUS")
-    confidence = "HIGH" if agreement == 3 else (
-        "MODERATE" if agreement == 2 else "LOW")
-    status = "LIVE" if len(live) == 3 else ("PARTIAL" if live else "UNAVAILABLE")
+    required = max(2, math.ceil(len(live) * .60)) if live else 2
+    direction = "BUY PRESSURE" if buys >= required and buys > sells else (
+        "SELL PRESSURE" if sells >= required and sells > buys else "NO CONSENSUS")
+    ratio = agreement / len(live) if live else 0.0
+    confidence = "HIGH" if len(live) >= 4 and ratio >= .75 else (
+        "MODERATE" if len(live) >= 3 and ratio >= .60 else "LOW")
+    status = "LIVE" if len(live) == 6 else ("PARTIAL" if live else "UNAVAILABLE")
     # Aggressive trades receive more weight than displayed book depth because
     # resting orders can be cancelled. Equal venue weighting prevents one
     # exchange from dominating solely because its contract is more active.
@@ -217,7 +289,7 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     # A directional call needs two live venues, material pressure and at least
     # two venue labels agreeing. Otherwise the observable order flow is noise.
     order_flow_decision = "WAIT"
-    if len(live) >= 2 and agreement >= 2 and abs(pressure) >= .15:
+    if len(live) >= 3 and agreement >= required and abs(pressure) >= .15:
         order_flow_decision = "BUY" if pressure > 0 else "SELL"
     return PerpetualConsensus(
         status, direction, agreement, len(live), confidence, venues,

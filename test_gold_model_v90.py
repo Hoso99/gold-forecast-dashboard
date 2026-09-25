@@ -66,10 +66,13 @@ class Version90AccuracyTests(unittest.TestCase):
             as_of=pd.Timestamp("2026-01-01", tz="UTC"))
         technical = {"trend": "UPTREND", "score": .70}
         consensus = SimpleNamespace(
-            agreement=3, direction="BUY PRESSURE")
+            agreement=4, direction="BUY PRESSURE", pressure_score=.60,
+            confidence="HIGH", order_flow_decision="BUY")
         lean = combined_directional_lean(
             result, pd.DataFrame(), technical, consensus)
         self.assertEqual(lean["lean"], "BUY LEAN")
+        self.assertEqual(lean["pressure_indication"], "BUY")
+        self.assertEqual(lean["weights"]["Perpetual pressure proxy"], .40)
         self.assertFalse(lean["actionable"])
 
     def test_institutional_liquidity_proxy_is_small_and_directional(self):

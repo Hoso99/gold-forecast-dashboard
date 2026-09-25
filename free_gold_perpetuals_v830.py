@@ -9,6 +9,9 @@ from free_gold_perpetuals_v90 import (  # noqa: F401
     parse_bingx,
     parse_bybit,
     parse_gate,
+    parse_bitget,
+    parse_mexc,
+    parse_phemex,
     parse_okx,
 )
 
@@ -21,5 +24,8 @@ __all__ = [
     "parse_bingx",
     "parse_bybit",
     "parse_gate",
+    "parse_bitget",
+    "parse_mexc",
+    "parse_phemex",
     "parse_okx",
 ]

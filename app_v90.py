@@ -23,12 +23,12 @@ from official_event_calendar_v830 import (
     download_official_events, event_risk_notice, format_events_gmt,
     official_event_risk)
 
-st.set_page_config(page_title="Gold Version 9.0.5", page_icon="🟡", layout="wide")
-st.title("Gold Version 9.0.5")
+st.set_page_config(page_title="Gold Version 9.2", page_icon="🟡", layout="wide")
+st.title("Gold Version 9.2")
 st.caption("Shock-aware calibrated regime-ensemble · one-hour forecast · market-only research")
 
 with st.sidebar:
-    st.header("Version 9.0.5 settings")
+    st.header("Version 9.2 settings")
     st.text_input("Candle interval", INTRADAY_INTERVAL, disabled=True)
     st.text_input("Forecast horizon", INTRADAY_HORIZON_LABEL, disabled=True)
     threshold = st.slider("Timing probability threshold", .55, .75, .60, .01)
@@ -52,7 +52,7 @@ with st.sidebar:
         "Optional official positioning CSV", type=["csv"],
         help=("Release-timestamped CFTC managed-money, central-bank demand or "
               "geopolitical-risk data. Future-dated observations are never used."))
-    run = st.button("Run Version 9.0.5", type="primary", width="stretch")
+    run = st.button("Run Version 9.2", type="primary", width="stretch")
 
 with st.expander("Investing.com three-star economic calendar", expanded=False):
     calendar_url = (
@@ -98,7 +98,7 @@ if not key:
     st.stop()
 
 try:
-    with st.spinner("Running Version 9.0.5 calibrated walk-forward research…"):
+    with st.spinner("Running Version 9.2 calibrated walk-forward research…"):
         gold, confirmations, source_status = download_intraday_bundle(key)
         validate_market_data(gold, confirmations)
         result = fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
@@ -133,7 +133,7 @@ try:
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
 except Exception as exc:
-    st.error(f"Version 9.0.5 could not run: {exc}")
+    st.error(f"Version 9.2 could not run: {exc}")
     st.stop()
 
 decision_tab, events_tab, pressure_tab, validation_tab, ledger_tab = st.tabs([
@@ -182,12 +182,12 @@ with events_tab:
         "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
     
 with pressure_tab:
-    st.subheader("Free three-venue XAU perpetual consensus")
+    st.subheader("Free six-venue XAU perpetual consensus")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Feed status", perpetual_consensus.status)
-    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/3")
+    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/6")
     p3.metric("Consensus", perpetual_consensus.direction)
-    p4.metric("Agreement", f"{perpetual_consensus.agreement}/3 · {perpetual_consensus.confidence}")
+    p4.metric("Agreement", f"{perpetual_consensus.agreement}/{perpetual_consensus.live_venues} live · {perpetual_consensus.confidence}")
     q1, q2, q3 = st.columns(3)
     q1.metric("Purchasing power", f"{perpetual_consensus.buying_power:.1%}")
     q2.metric("Selling power", f"{perpetual_consensus.selling_power:.1%}")
@@ -200,18 +200,18 @@ with pressure_tab:
             "Book imbalance": st.column_config.NumberColumn(format="%+.1%%"),
             "Trade imbalance": st.column_config.NumberColumn(format="%+.1%%"),
         }, hide_index=True, width="stretch")
-    if perpetual_consensus.agreement == 3:
+    if perpetual_consensus.confidence == "HIGH":
         st.warning(
-            f"THREE-VENUE {perpetual_consensus.direction}: Binance, Bybit and OKX "
-            "currently agree. Treat this as a real-time liquidity warning, not a trade instruction.")
-    elif perpetual_consensus.agreement == 2:
+            f"HIGH-CONFIDENCE {perpetual_consensus.direction}: a strong majority "
+            "of live venues agree. Treat this as order-flow confirmation, not a standalone trade.")
+    elif perpetual_consensus.confidence == "MODERATE":
         st.info(
-            f"TWO-VENUE {perpetual_consensus.direction}: confirmation is moderate; "
-            "one venue is neutral, opposed or unavailable.")
+            f"MODERATE {perpetual_consensus.direction}: a live-venue majority agrees, "
+            "but confirmation is incomplete.")
     else:
         st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
     st.caption(
-        "Free public Binance XAUUSDT, Bybit XAUUSDT and OKX XAU-USDT-SWAP "
+        "Free public Binance, Bybit, OKX, MEXC, Bitget and Phemex gold-linked "
         "snapshots. These are synthetic perpetual proxies—not COMEX GC. Aggressive "
         "trades receive 65% and displayed depth 35% of the pressure score. The "
         "model uses at most 10% weight and requires cross-venue agreement; this "
@@ -253,7 +253,7 @@ with pressure_tab:
 with decision_tab:
     lower, median, upper = price_interval(result)
     forecast_time = result.as_of + pd.Timedelta(hours=1)
-    st.subheader("Version 9.0.5 decision")
+    st.subheader("Version 9.2 decision")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
@@ -261,11 +261,12 @@ with decision_tab:
     c4.metric("Probability up", f"{elliott.probability_up:.1%}")
     c5.metric("Predicted price in 1 hour", f"USD {median:,.2f}")
     c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Short-term technical trend", short_trend["trend"])
-    d2.metric("All-source directional lean", directional["lean"])
-    d3.metric("Evidence alignment", f'{directional["aligned"]}/{directional["active"]}')
-    d4.metric("Lean confidence", directional["confidence"])
+    d2.metric("Priority market-pressure indication", directional["pressure_indication"])
+    d3.metric("All-source directional lean", directional["lean"])
+    d4.metric("Evidence alignment", f'{directional["aligned"]}/{directional["active"]}')
+    d5.metric("Lean confidence", directional["confidence"])
     st.progress((directional["score"] + 1) / 2,
                 text=f'Directional score {directional["score"]:+.2f} '
                      '(left = SELL lean, right = BUY lean)')
@@ -281,6 +282,11 @@ with decision_tab:
                  column_config={
                      "Score": st.column_config.NumberColumn(format="%+.2f"),
                      "Weight": st.column_config.NumberColumn(format="%.0%%")})
+    if directional["pressure_priority"]:
+        st.warning(
+            f'PRIORITY PRESSURE INDICATION: {directional["pressure_indication"]}. '
+            'This is the highest-weight timing input, but it becomes an actionable '
+            'trade only when the risk-controlled action confirms the same side.')
     if directional["actionable"]:
         st.success(
             f'CONFIRMED {decision.action}: the validated action and all-source '
@@ -415,7 +421,7 @@ ledger.record(
     gate_reasons="; ".join(decision.reasons),
 )
 if settled:
-    st.success(f"Settled {settled} previous Version 9.0.5 forecast(s).")
+    st.success(f"Settled {settled} previous Version 9.2 forecast(s).")
 
 with validation_tab:
     st.subheader("Live forecast settlement performance")
@@ -474,13 +480,13 @@ with validation_tab:
     
     st.subheader("Walk-forward out-of-sample performance")
     st.dataframe(pd.DataFrame([
-        {"Model": "Version 9.0.5", "ROC-AUC": result.metrics.get("ROC-AUC"),
+        {"Model": "Version 9.2", "ROC-AUC": result.metrics.get("ROC-AUC"),
          "Brier score": result.metrics.get("Brier score")},
         {"Model": "Version 8.2.5 champion",
          "ROC-AUC": result.baseline_metrics.get("Champion ROC-AUC"),
          "Brier score": result.baseline_metrics.get("Champion Brier score")},
     ]), hide_index=True, width="stretch")
-    st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.0.5 abstains unless it beats 8.2.5 on both.")
+    st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.2 abstains unless it beats 8.2.5 on both.")
     st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
 
     st.subheader("Selective-signal reliability")
@@ -510,10 +516,10 @@ with validation_tab:
         f'Median bias adjustment: {result.median_bias_adjustment:+.3%} return.')
     
 with ledger_tab:
-    st.subheader("Version 9.0.5 forecast ledger")
+    st.subheader("Version 9.2 forecast ledger")
     history = ledger.frame()
     st.dataframe(history, hide_index=True, width="stretch")
-    st.download_button("Download Version 9.0.5 ledger (CSV)", history.to_csv(index=False).encode(),
+    st.download_button("Download Version 9.2 ledger (CSV)", history.to_csv(index=False).encode(),
                        "gold_v90_forecast_ledger.csv", "text/csv")
     
     st.subheader("Technical indicators and previous-session pivots")
@@ -526,7 +532,7 @@ with ledger_tab:
     st.caption("Slow factors classify regime at their true release frequency; they do not create synthetic 15-minute releases.")
     st.caption(
         "Investing.com calendar values are displayed through its official widget "
-        "and are not scraped, copied or stored by Version 9.0.5.")
+        "and are not scraped, copied or stored by Version 9.2.")
     
     st.subheader("Official event-calendar audit")
     st.dataframe(official_audit, hide_index=True, width="stretch")
