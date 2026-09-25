@@ -31,7 +31,7 @@ Version 9.3 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
   calibrated statistical probability, short-term trend, expected move, slow
   macro background and confirmed cross-venue pressure. It is explanatory and
   cannot override failed validation, transaction-cost or event gates.
-- A three-venue pressure conflict or an opposing short-term technical trend
+- A high-confidence four-venue pressure conflict or an opposing short-term technical trend
   blocks an otherwise actionable candidate.
 - A separate five-minute XAU/USD exhaustion-and-break detector can issue an
   EARLY BUY WARNING or EARLY SELL WARNING after a completed five-minute bar.

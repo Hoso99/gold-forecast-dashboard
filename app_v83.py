@@ -32,7 +32,7 @@ with st.sidebar:
     st.header("Version 9.3 settings")
     st.text_input("Candle interval", INTRADAY_INTERVAL, disabled=True)
     st.text_input("Forecast horizon", INTRADAY_HORIZON_LABEL, disabled=True)
-    threshold = st.slider("Timing probability threshold", .55, .75, .58, .01)
+    threshold = st.slider("Timing probability threshold", .55, .75, .62, .01)
     cost_bps = st.number_input("Estimated total cost (basis points)", 0, 100, 10, 5)
     splits = st.slider("Walk-forward folds", 4, 8, 5)
     major_event = st.checkbox(
@@ -184,16 +184,17 @@ with events_tab:
         "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
     
 with pressure_tab:
-    st.subheader("Free six-venue XAU perpetual consensus")
+    st.subheader("Four-venue XAU perpetual consensus")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Feed status", perpetual_consensus.status)
-    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/6")
+    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/4")
     p3.metric("Consensus", perpetual_consensus.direction)
     p4.metric("Agreement", f"{perpetual_consensus.agreement}/{perpetual_consensus.live_venues} live · {perpetual_consensus.confidence}")
-    q1, q2, q3 = st.columns(3)
+    q1, q2, q3, q4 = st.columns(4)
     q1.metric("Purchasing power", f"{perpetual_consensus.buying_power:.1%}")
     q2.metric("Selling power", f"{perpetual_consensus.selling_power:.1%}")
-    q3.metric("Order-flow decision", perpetual_consensus.order_flow_decision)
+    q3.metric("Early pressure bias", perpetual_consensus.pressure_bias)
+    q4.metric("Confirmed pressure", perpetual_consensus.order_flow_decision)
     perpetual_table = perpetual_display_frame(perpetual_consensus)
     st.dataframe(
         perpetual_table,
@@ -213,10 +214,11 @@ with pressure_tab:
     else:
         st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
     st.caption(
-        "Free public Binance, Bybit, OKX, MEXC, Bitget and Phemex gold-linked "
+        "Reachable public Gate, OKX, MEXC and Bitget gold-linked "
         "snapshots. These are synthetic perpetual proxies—not COMEX GC. Aggressive "
         "trades receive 65% and displayed depth 35% of the pressure score. The "
-        "model uses at most 10% weight and requires cross-venue agreement; this "
+        "pressure can receive up to 50% contextual weight but still requires "
+        "cross-venue agreement and conservative release gates; this "
         "cannot reveal hidden orders or guarantee the next move.")
     
     st.subheader("Institutional liquidity and accumulation audit")
@@ -289,6 +291,10 @@ with decision_tab:
             f'PRIORITY PRESSURE INDICATION: {directional["pressure_indication"]}. '
             'This is the highest-weight timing input, but it becomes an actionable '
             'trade only when the risk-controlled action confirms the same side.')
+    elif directional["pressure_indication"] in {"BUY", "SELL"}:
+        st.info(
+            f'EARLY PRESSURE BIAS: {directional["pressure_indication"]}. '
+            'Useful for preparation only; strict confirmation has not passed.')
     if directional["actionable"]:
         st.success(
             f'CONFIRMED {decision.action}: the validated action and all-source '
@@ -500,9 +506,9 @@ with validation_tab:
         f'{selective["lower_bound"]:.1%}'
         if pd.notna(selective["lower_bound"]) else "N/A"))
     st.caption(
-        "BUY/SELL is released only when the current side has at least 30 "
+        "BUY/SELL is released only when the current side has at least 40 "
         "purged out-of-sample examples and its conservative accuracy lower "
-        "bound is at least 50%.")
+        "bound is at least 52%.")
     st.dataframe(pd.DataFrame([
         {"Ensemble member": name, "Calibration weight": weight}
         for name, weight in result.ensemble_weights.items()

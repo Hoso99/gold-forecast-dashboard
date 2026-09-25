@@ -45,6 +45,7 @@ class PerpetualConsensus:
     buying_power: float = 0.5
     selling_power: float = 0.5
     order_flow_decision: str = "WAIT"
+    pressure_bias: str = "WAIT"
 
 
 def _get(url: str, timeout: float = 3.5) -> Any:
@@ -169,6 +170,28 @@ def parse_phemex(book: dict, trades: dict, symbol: str = "XAUUSDT") -> VenueAudi
                    signed, price)
 
 
+def parse_kraken(book: dict, trades: dict) -> VenueAudit:
+    book_result = book.get("result", {})
+    trade_result = trades.get("result", {})
+    depth = next(iter(book_result.values()), {})
+    rows = next((value for key, value in trade_result.items()
+                 if key != "last" and isinstance(value, list)), [])
+    signed = [(1.0 if str(row[3]).lower() == "b" else -1.0, float(row[1]))
+              for row in rows if len(row) >= 4]
+    price = float(rows[-1][0]) if rows else np.nan
+    return _finish("Kraken (fallback)", "XAUT/USD", depth.get("bids", []),
+                   depth.get("asks", []), signed, price)
+
+
+def parse_coinbase(book: dict, trades: list[dict]) -> VenueAudit:
+    # Coinbase reports the resting maker side, so aggressor direction is inverse.
+    signed = [(1.0 if str(row.get("side", "")).lower() == "sell" else -1.0,
+               float(row["size"])) for row in trades]
+    price = float(trades[0]["price"]) if trades else np.nan
+    return _finish("Coinbase PAXG (fallback)", "PAXG-USD",
+                   book.get("bids", []), book.get("asks", []), signed, price)
+
+
 def _error_detail(exc: Exception) -> str:
     if isinstance(exc, HTTPError):
         if exc.code in (403, 451):
@@ -230,6 +253,16 @@ def _collect_one(venue: str) -> VenueAudit:
                 except Exception as exc:
                     last_error = exc
             raise last_error or ValueError("no supported gold contract")
+        if venue == "Kraken":
+            base = "https://api.kraken.com/0/public"
+            return parse_kraken(
+                _get(base + "/Depth?pair=XAUTUSD&count=50"),
+                _get(base + "/Trades?pair=XAUTUSD&count=100"))
+        if venue == "Coinbase":
+            base = "https://api.exchange.coinbase.com/products/PAXG-USD"
+            return parse_coinbase(
+                _get(base + "/book?level=2"),
+                _get(base + "/trades?limit=100"))
         base = "https://api.gateio.ws/api/v4/futures/usdt"
         book = _get(base + "/order_book?contract=XAU_USDT&limit=50")
         trades = _get(base + "/trades?contract=XAU_USDT&limit=100")
@@ -254,27 +287,29 @@ def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    # These four venues are reachable from the deployed cloud region. Permanently
+    # blocked or unsupported slots are excluded rather than displayed as data.
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = (
-            pool.submit(_collect_slot, "Binance", "BingX"),
-            pool.submit(_collect_slot, "Bybit", "Gate"),
+            pool.submit(_collect_slot, "Gate"),
             pool.submit(_collect_slot, "OKX"),
             pool.submit(_collect_slot, "MEXC"),
             pool.submit(_collect_slot, "Bitget"),
-            pool.submit(_collect_slot, "Phemex"),
         )
         venues = [future.result() for future in futures]
     live = [venue for venue in venues if venue.status == "LIVE"]
     buys = sum(venue.bias == "BUY PRESSURE" for venue in live)
     sells = sum(venue.bias == "SELL PRESSURE" for venue in live)
     agreement = max(buys, sells)
-    required = max(2, math.ceil(len(live) * .60)) if live else 2
+    # Conservative release: every currently live venue must agree. With fewer
+    # than three valid venues the pressure layer cannot issue BUY or SELL.
+    required = len(live) if len(live) >= 3 else 3
     direction = "BUY PRESSURE" if buys >= required and buys > sells else (
         "SELL PRESSURE" if sells >= required and sells > buys else "NO CONSENSUS")
     ratio = agreement / len(live) if live else 0.0
     confidence = "HIGH" if len(live) >= 4 and ratio >= .75 else (
         "MODERATE" if len(live) >= 3 and ratio >= .60 else "LOW")
-    status = "LIVE" if len(live) == 6 else ("PARTIAL" if live else "UNAVAILABLE")
+    status = "LIVE" if len(live) == 4 else ("PARTIAL" if live else "UNAVAILABLE")
     # Aggressive trades receive more weight than displayed book depth because
     # resting orders can be cancelled. Equal venue weighting prevents one
     # exchange from dominating solely because its contract is more active.
@@ -289,11 +324,16 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     # A directional call needs two live venues, material pressure and at least
     # two venue labels agreeing. Otherwise the observable order flow is noise.
     order_flow_decision = "WAIT"
-    if len(live) >= 3 and agreement >= required and abs(pressure) >= .15:
+    if len(live) >= 3 and agreement >= required and abs(pressure) >= .20:
         order_flow_decision = "BUY" if pressure > 0 else "SELL"
+    # Earlier directional information for the UI. This is deliberately easier
+    # to trigger than the confirmed decision and is never an execution approval.
+    pressure_bias = "WAIT"
+    if len(live) >= 3 and abs(pressure) >= .10:
+        pressure_bias = "BUY" if pressure > 0 else "SELL"
     return PerpetualConsensus(
         status, direction, agreement, len(live), confidence, venues,
-        pressure, buying, selling, order_flow_decision)
+        pressure, buying, selling, order_flow_decision, pressure_bias)
 
 
 def display_frame(consensus: PerpetualConsensus) -> pd.DataFrame:

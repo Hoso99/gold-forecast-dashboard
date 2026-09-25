@@ -1,6 +1,7 @@
 from free_gold_perpetuals_v830 import (
     PerpetualConsensus, VenueAudit, parse_binance, parse_bingx, parse_bitget,
-    parse_bybit, parse_gate, parse_mexc, parse_okx, parse_phemex)
+    parse_bybit, parse_coinbase, parse_gate, parse_kraken, parse_mexc,
+    parse_okx, parse_phemex)
 from free_gold_perpetuals_v90 import collect_free_perpetual_consensus
 
 
@@ -45,6 +46,8 @@ def test_gate_fallback_sell_pressure():
 
 def test_consensus_has_power_fields(monkeypatch):
     rows = {
+        "Gate": VenueAudit("Gate", "LIVE", "XAU_USDT", 100, .20, .60,
+                           "BUY PRESSURE", 100),
         "Binance": VenueAudit("Binance", "LIVE", "XAUUSDT", 100, .20, .60,
                               "BUY PRESSURE", 100),
         "Bybit": VenueAudit("Bybit", "LIVE", "XAUUSDT", 100, .10, .50,
@@ -63,6 +66,7 @@ def test_consensus_has_power_fields(monkeypatch):
         lambda preferred, fallback=None: rows[preferred])
     result = collect_free_perpetual_consensus()
     assert result.order_flow_decision == "BUY"
+    assert result.pressure_bias == "BUY"
     assert result.buying_power > result.selling_power
     assert result.pressure_score > 0
 
@@ -78,3 +82,14 @@ def test_three_new_venue_parsers():
         {"result": {"book": {"bids": [[1000000, 9]], "asks": [[1010000, 1]]}}},
         {"result": {"trades": [[1, "Buy", 1005000, 4]]}})
     assert mexc.bias == bitget.bias == phemex.bias == "BUY PRESSURE"
+
+
+def test_gold_token_fallback_parsers():
+    kraken = parse_kraken(
+        {"result": {"XAUTUSD": {"bids": [[100, 9, 1]],
+                                  "asks": [[101, 1, 1]]}}},
+        {"result": {"XAUTUSD": [[100.5, 4, 1, "b"]], "last": "1"}})
+    coinbase = parse_coinbase(
+        {"bids": [[100, 9, 1]], "asks": [[101, 1, 1]]},
+        [{"side": "sell", "size": 4, "price": 100.5}])
+    assert kraken.bias == coinbase.bias == "BUY PRESSURE"

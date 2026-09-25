@@ -407,7 +407,7 @@ def _folds(n, splits, gap):
 
 
 def selective_reliability(predictions, probability, threshold,
-                          min_observations=30):
+                          min_observations=30, min_lower_bound=.50):
     """Measure side-specific out-of-sample reliability near an action."""
     side = "BUY" if probability >= threshold else (
         "SELL" if probability <= 1 - threshold else "NO EDGE")
@@ -424,7 +424,7 @@ def selective_reliability(predictions, probability, threshold,
     lower = _wilson_lower(wins, n)
     return {
         "side": side, "qualified": bool(
-            n >= min_observations and lower >= .50),
+            n >= min_observations and lower >= min_lower_bound),
         "observations": n,
         "accuracy": wins / n if n else np.nan,
         "lower_bound": lower,
@@ -432,20 +432,20 @@ def selective_reliability(predictions, probability, threshold,
 
 
 def balanced_release_reasons(result) -> list[str]:
-    """Moderately lenient 30-minute gates; hard safety gates stay unchanged."""
+    """Conservative 30-minute evidence gates."""
     metrics = result.metrics
     reasons = []
-    if metrics.get("ROC-AUC", 0) < .52:
-        reasons.append("30-minute ROC-AUC is below 0.52")
+    if metrics.get("ROC-AUC", 0) < .55:
+        reasons.append("30-minute ROC-AUC is below 0.55")
     if metrics.get("Strategy total return", 0) <= 0:
         reasons.append("30-minute walk-forward strategy return is not positive")
-    if metrics.get("Strategy max drawdown", -1) < -.12:
-        reasons.append("30-minute walk-forward drawdown exceeds 12%")
+    if metrics.get("Strategy max drawdown", -1) < -.08:
+        reasons.append("30-minute walk-forward drawdown exceeds 8%")
     coverage = metrics.get("80% interval coverage", 0)
-    if not .68 <= coverage <= .92:
-        reasons.append("30-minute interval coverage is outside 68% to 92%")
-    if metrics.get("Signal changes", 0) < 15:
-        reasons.append("fewer than 15 non-overlapping signal changes")
+    if not .70 <= coverage <= .90:
+        reasons.append("30-minute interval coverage is outside 70% to 90%")
+    if metrics.get("Signal changes", 0) < 30:
+        reasons.append("fewer than 30 non-overlapping signal changes")
     return reasons
 
 
@@ -704,7 +704,8 @@ def combined_directional_lean(result, macro, technical,
             1.0 if perpetual_consensus.direction == "BUY PRESSURE" else
             -1.0 if perpetual_consensus.direction == "SELL PRESSURE" else 0.0))
         pressure_indication = getattr(
-            perpetual_consensus, "order_flow_decision", "WAIT")
+            perpetual_consensus, "pressure_bias",
+            getattr(perpetual_consensus, "order_flow_decision", "WAIT"))
         # Cross-venue executed flow is the priority timing input when the feed
         # passes its coverage/agreement gate. It remains a proxy, not COMEX GC.
         pressure_confidence = getattr(perpetual_consensus, "confidence", "LOW")
@@ -743,14 +744,15 @@ def combined_directional_lean(result, macro, technical,
         "aligned": aligned, "active": active,
         "components": values, "weights": weights,
         "pressure_indication": pressure_indication,
-        "pressure_priority": pressure_indication in {"BUY", "SELL"},
+        "pressure_priority": getattr(
+            perpetual_consensus, "order_flow_decision", "WAIT") in {"BUY", "SELL"},
         "actionable": False,
     }
 
 
 def non_overlapping_evaluation(result, threshold, cost_bps):
     sample = result.predictions.iloc[::INTRADAY_HORIZON_BARS].copy()
-    minimum = 2 * cost_bps / 10_000
+    minimum = 3 * cost_bps / 10_000
     sample["position"] = 0
     sample.loc[
         (sample.probability_up >= threshold) &
@@ -779,17 +781,13 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
                technical=None, perpetual_consensus=None):
     regime, _, evidence = classify_macro_regime(macro, result.as_of)
     evaluation = non_overlapping_evaluation(result, threshold, cost_bps)
-    minimum = 2 * cost_bps / 10_000
+    minimum = 3 * cost_bps / 10_000
     probability = float(elliott.probability_up)
     pressure_side = getattr(perpetual_consensus, "order_flow_decision", "WAIT")
     pressure_confidence = getattr(perpetual_consensus, "confidence", "LOW")
-    pressure_threshold = max(.55, threshold - .03)
-    buy_threshold = (
-        pressure_threshold if pressure_side == "BUY" and pressure_confidence == "HIGH"
-        else threshold)
-    sell_threshold = (
-        1 - pressure_threshold if pressure_side == "SELL" and pressure_confidence == "HIGH"
-        else 1 - threshold)
+    pressure_threshold = threshold
+    buy_threshold = threshold
+    sell_threshold = 1 - threshold
     candidate = (
         "BUY" if probability >= buy_threshold and result.median_return > minimum
         else "SELL" if probability <= sell_threshold and result.median_return < -minimum
@@ -798,13 +796,14 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
         candidate == pressure_side and pressure_confidence == "HIGH") else threshold
     reasons = balanced_release_reasons(result)
     reliability = selective_reliability(
-        result.predictions, probability, reliability_threshold)
+        result.predictions, probability, reliability_threshold,
+        min_observations=40, min_lower_bound=.52)
     result.selective_reliability = reliability
     if candidate != "NO EDGE" and not reliability["qualified"]:
         reasons.append(
-            "current side lacks 30 out-of-sample signals with a Wilson "
-            "accuracy lower bound of at least 50%")
-    if getattr(result, "model_disagreement", 1.0) > .15:
+            "current side lacks 40 out-of-sample signals with a Wilson "
+            "accuracy lower bound of at least 52%")
+    if getattr(result, "model_disagreement", 1.0) > .10:
         reasons.append("ensemble members disagree too strongly")
     champion_auc = result.baseline_metrics.get("Champion ROC-AUC")
     champion_brier = result.baseline_metrics.get("Champion Brier score")
@@ -814,12 +813,12 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
         reasons.append("Version 9.0 did not beat Version 8.2.5 calibration")
     if result.metrics.get("Calibration improvement", 0) < 0:
         reasons.append("fold-local calibration did not improve Brier score")
-    if evaluation["Trades"] < 15:
-        reasons.append("fewer than 15 non-overlapping cost-aware trades")
+    if evaluation["Trades"] < 30:
+        reasons.append("fewer than 30 non-overlapping cost-aware trades")
     if evaluation["Net return"] <= 0:
         reasons.append("non-overlapping cost-aware return is not positive")
-    if np.isfinite(evaluation["Profit factor"]) and evaluation["Profit factor"] < 1.15:
-        reasons.append("cost-aware profit factor is below 1.15")
+    if np.isfinite(evaluation["Profit factor"]) and evaluation["Profit factor"] < 1.30:
+        reasons.append("cost-aware profit factor is below 1.30")
     if candidate == "BUY" and regime == "BEARISH":
         reasons.append("BUY candidate conflicts with bearish macro regime")
     if candidate == "SELL" and regime == "BULLISH":
