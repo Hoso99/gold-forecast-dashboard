@@ -13,7 +13,9 @@ from gold_model_v82 import (
     INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL, apply_elliott_overlay,
     download_intraday_bundle, fit_intraday_system, validate_market_data,
 )
-from gold_model_v90 import MODEL_VERSION_V90, decide_v90, fit_v90_system
+from gold_model_v90 import (
+    MODEL_VERSION_V90, combined_directional_lean, decide_v90,
+    fit_v90_system, short_term_technical_trend)
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
 from official_event_calendar_v830 import (
@@ -105,9 +107,18 @@ try:
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
                                         threshold, cost_bps, gold)
         perpetual_consensus = free_perpetual_audit()
+        short_trend = short_term_technical_trend(gold)
         decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
-            major_event=(major_event or automatic_event_lock))
+            major_event=(major_event or automatic_event_lock),
+            technical=short_trend,
+            perpetual_consensus=perpetual_consensus)
+        directional = combined_directional_lean(
+            result, macro, short_trend, perpetual_consensus,
+            event_lock=(major_event or automatic_event_lock))
+        directional["actionable"] = (
+            decision.action in {"BUY", "SELL"} and
+            directional["lean"].startswith(decision.action))
 except Exception as exc:
     st.error(f"Version 9.0 could not run: {exc}")
     st.stop()
@@ -225,12 +236,41 @@ with decision_tab:
     forecast_time = result.as_of + pd.Timedelta(hours=1)
     st.subheader("Version 9.0 decision")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Macro regime", decision.macro_regime)
+    c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
     c3.metric("Risk-controlled action", decision.action)
     c4.metric("Probability up", f"{elliott.probability_up:.1%}")
     c5.metric("Predicted price in 1 hour", f"USD {median:,.2f}")
     c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric("Short-term technical trend", short_trend["trend"])
+    d2.metric("All-source directional lean", directional["lean"])
+    d3.metric("Evidence alignment", f'{directional["aligned"]}/{directional["active"]}')
+    d4.metric("Lean confidence", directional["confidence"])
+    st.progress((directional["score"] + 1) / 2,
+                text=f'Directional score {directional["score"]:+.2f} '
+                     '(left = SELL lean, right = BUY lean)')
+    evidence_rows = []
+    for source, score in directional["components"].items():
+        evidence_rows.append({
+            "Evidence": source,
+            "Direction": "BUY" if score > .10 else "SELL" if score < -.10 else "NEUTRAL",
+            "Score": score,
+            "Weight": directional["weights"][source],
+        })
+    st.dataframe(pd.DataFrame(evidence_rows), hide_index=True, width="stretch",
+                 column_config={
+                     "Score": st.column_config.NumberColumn(format="%+.2f"),
+                     "Weight": st.column_config.NumberColumn(format="%.0%%")})
+    if directional["actionable"]:
+        st.success(
+            f'CONFIRMED {decision.action}: the validated action and all-source '
+            'directional lean agree. This remains probabilistic, not guaranteed.')
+    else:
+        st.info(
+            f'{directional["lean"]} is context only. The executable research '
+            f'action remains {decision.action}; a lean never overrides failed '
+            'validation, cost or event gates.')
     st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%m-%d %H:%M UTC} | Spot USD {result.spot:,.2f}")
     if decision.reasons:
         st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")

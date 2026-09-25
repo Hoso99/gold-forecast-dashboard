@@ -1,10 +1,13 @@
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
 from gold_model_v90 import (
-    _calibration_weights, _conformalize_quantiles, selective_reliability)
+    _calibration_weights, _conformalize_quantiles,
+    combined_directional_lean, selective_reliability,
+    short_term_technical_trend)
 
 
 class Version90AccuracyTests(unittest.TestCase):
@@ -41,6 +44,31 @@ class Version90AccuracyTests(unittest.TestCase):
         self.assertEqual(sell["observations"], 30)
         self.assertTrue(buy["qualified"])
         self.assertTrue(sell["qualified"])
+
+    def test_short_term_trend_detects_rising_and_falling_prices(self):
+        index = pd.date_range("2026-01-01", periods=100, freq="15min", tz="UTC")
+        rising = np.linspace(2600, 2660, len(index))
+        def frame(close):
+            return pd.DataFrame({
+                "open": np.r_[close[0], close[:-1]],
+                "high": close + .5, "low": close - .5, "close": close,
+            }, index=index)
+        self.assertEqual(short_term_technical_trend(frame(rising))["trend"],
+                         "UPTREND")
+        self.assertEqual(short_term_technical_trend(frame(rising[::-1]))["trend"],
+                         "DOWNTREND")
+
+    def test_combined_lean_reports_direction_without_claiming_action(self):
+        result = SimpleNamespace(
+            probability_up=.70, median_return=.003,
+            as_of=pd.Timestamp("2026-01-01", tz="UTC"))
+        technical = {"trend": "UPTREND", "score": .70}
+        consensus = SimpleNamespace(
+            agreement=3, direction="BUY PRESSURE")
+        lean = combined_directional_lean(
+            result, pd.DataFrame(), technical, consensus)
+        self.assertEqual(lean["lean"], "BUY LEAN")
+        self.assertFalse(lean["actionable"])
 
 
 if __name__ == "__main__":

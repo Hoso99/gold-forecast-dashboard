@@ -15,7 +15,7 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.1-calibration-weighted-selective-research"
+MODEL_VERSION_V90 = "9.0.2-short-term-trend-directional-lean-research"
 
 
 @dataclass
@@ -509,6 +509,93 @@ def classify_macro_regime(macro, as_of):
     return regime, score, used
 
 
+def short_term_technical_trend(gold):
+    """Causal multi-speed trend state using completed 15-minute candles."""
+    close = gold.close.astype(float)
+    returns = close.pct_change()
+    volatility = returns.rolling(64, min_periods=32).std().iloc[-1]
+    volatility = float(volatility) if np.isfinite(volatility) and volatility > 0 else 1e-6
+    ema_fast = close.ewm(span=8, adjust=False).mean()
+    ema_slow = close.ewm(span=32, adjust=False).mean()
+    previous = close.shift(1)
+    true_range = pd.concat([
+        gold.high - gold.low,
+        (gold.high - previous).abs(),
+        (gold.low - previous).abs(),
+    ], axis=1).max(axis=1)
+    atr = float(true_range.rolling(14, min_periods=8).mean().iloc[-1])
+    atr = atr if np.isfinite(atr) and atr > 0 else float(close.iloc[-1] * volatility)
+    components = {
+        "one_hour_momentum": float(np.clip(
+            close.pct_change(4).iloc[-1] / (volatility * 2), -2, 2)),
+        "two_hour_momentum": float(np.clip(
+            close.pct_change(8).iloc[-1] / (volatility * np.sqrt(8)), -2, 2)),
+        "ema_alignment": float(np.clip(
+            (ema_fast.iloc[-1] - ema_slow.iloc[-1]) / atr, -2, 2)),
+        "candle_persistence": float(np.clip(
+            (returns.tail(8).gt(0).mean() - .5) * 4, -2, 2)),
+    }
+    weights = {
+        "one_hour_momentum": .35, "two_hour_momentum": .25,
+        "ema_alignment": .25, "candle_persistence": .15}
+    score = float(sum(components[name] * weights[name] for name in weights) / 2)
+    score = float(np.clip(score, -1, 1))
+    trend = "UPTREND" if score >= .20 else (
+        "DOWNTREND" if score <= -.20 else "RANGE")
+    return {
+        "trend": trend, "score": score,
+        "confidence": "HIGH" if abs(score) >= .60 else (
+            "MODERATE" if abs(score) >= .35 else "LOW"),
+        "components": components,
+    }
+
+
+def combined_directional_lean(result, macro, technical,
+                              perpetual_consensus=None, event_lock=False):
+    """Transparent directional synthesis; never bypasses the action gates."""
+    _, macro_score, _ = classify_macro_regime(macro, result.as_of)
+    statistical = float(np.clip((result.probability_up - .5) / .15, -1, 1))
+    expected = float(np.clip(
+        result.median_return / max(abs(result.median_return), .0015), -1, 1))
+    microstructure = 0.0
+    micro_weight = 0.0
+    if perpetual_consensus is not None and perpetual_consensus.agreement >= 2:
+        microstructure = (
+            1.0 if perpetual_consensus.direction == "BUY PRESSURE" else
+            -1.0 if perpetual_consensus.direction == "SELL PRESSURE" else 0.0)
+        micro_weight = .10 * perpetual_consensus.agreement / 3
+    values = {
+        "Statistical forecast": statistical,
+        "Short-term technical": float(technical["score"]),
+        "Expected price move": expected,
+        "Slow macro background": float(np.clip(macro_score / 1.5, -1, 1)),
+        "Perpetual pressure proxy": microstructure,
+    }
+    weights = {
+        "Statistical forecast": .35,
+        "Short-term technical": .35,
+        "Expected price move": .15,
+        "Slow macro background": .10,
+        "Perpetual pressure proxy": micro_weight,
+    }
+    denominator = sum(weights.values())
+    score = float(sum(values[name] * weights[name] for name in values) / denominator)
+    lean = "BUY LEAN" if score >= 0 else "SELL LEAN"
+    confidence = "HIGH" if abs(score) >= .55 else (
+        "MODERATE" if abs(score) >= .30 else "LOW")
+    if event_lock:
+        confidence = "EVENT RISK"
+    aligned = sum(np.sign(value) == np.sign(score) for value in values.values()
+                  if abs(value) >= .10)
+    active = sum(abs(value) >= .10 for value in values.values())
+    return {
+        "lean": lean, "score": score, "confidence": confidence,
+        "aligned": aligned, "active": active,
+        "components": values, "weights": weights,
+        "actionable": False,
+    }
+
+
 def non_overlapping_evaluation(result, threshold, cost_bps):
     sample = result.predictions.iloc[::INTRADAY_HORIZON_BARS].copy()
     minimum = 2 * cost_bps / 10_000
@@ -536,7 +623,8 @@ def non_overlapping_evaluation(result, threshold, cost_bps):
             "Max drawdown": float((equity / equity.cummax() - 1).min())}
 
 
-def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False):
+def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
+               technical=None, perpetual_consensus=None):
     regime, _, evidence = classify_macro_regime(macro, result.as_of)
     evaluation = non_overlapping_evaluation(result, threshold, cost_bps)
     minimum = 2 * cost_bps / 10_000
@@ -573,6 +661,18 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False):
         reasons.append("BUY candidate conflicts with bearish macro regime")
     if candidate == "SELL" and regime == "BULLISH":
         reasons.append("SELL candidate conflicts with bullish macro regime")
+    if technical is not None:
+        if candidate == "BUY" and technical["trend"] == "DOWNTREND":
+            reasons.append("BUY candidate conflicts with the short-term downtrend")
+        if candidate == "SELL" and technical["trend"] == "UPTREND":
+            reasons.append("SELL candidate conflicts with the short-term uptrend")
+    if (perpetual_consensus is not None and
+            perpetual_consensus.agreement == 3 and candidate != "NO EDGE"):
+        proxy_side = (
+            "BUY" if perpetual_consensus.direction == "BUY PRESSURE" else
+            "SELL" if perpetual_consensus.direction == "SELL PRESSURE" else None)
+        if proxy_side is not None and proxy_side != candidate:
+            reasons.append("three-venue pressure conflicts with the candidate")
     if (elliott.qualified and candidate != "NO EDGE" and
             elliott.current_bias not in {candidate, "NEUTRAL"}):
         reasons.append("qualified Elliott structure contradicts the candidate")

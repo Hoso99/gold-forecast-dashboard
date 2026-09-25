@@ -24,6 +24,15 @@ Version 9.0 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
   points for an actionable signal.
 - Quantile forecasts are expanded with a fold-local split-conformal correction,
   and the median forecast receives a robust calibration-window bias correction.
+- The Decision tab separates the slow macro background from a causal short-term
+  technical trend built from one-hour momentum, two-hour momentum, 8/32 EMA
+  alignment and recent candle persistence.
+- An all-source directional score reports BUY LEAN or SELL LEAN using the
+  calibrated statistical probability, short-term trend, expected move, slow
+  macro background and confirmed cross-venue pressure. It is explanatory and
+  cannot override failed validation, transaction-cost or event gates.
+- A three-venue pressure conflict or an opposing short-term technical trend
+  blocks an otherwise actionable candidate.
 - Elliott is an independently gated confirmation and cannot rescue failed statistical evidence.
 - Output is BUY, SELL, NO EDGE or BLOCKED.
 - Version 9.0 writes only to `forecast_ledger_v90.sqlite`.
