@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from forecast_ledger_v83 import ForecastLedgerV83
+from forecast_ledger_v90 import ForecastLedgerV90
 from event_chart_v90 import (
     combine_chart_events, event_price_chart, manual_event_frame)
 from free_gold_perpetuals_v830 import (
@@ -13,7 +13,7 @@ from gold_model_v82 import (
     INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL, apply_elliott_overlay,
     download_intraday_bundle, fit_intraday_system, validate_market_data,
 )
-from gold_model_v83 import MODEL_VERSION_V83, decide_v83, fit_v83_system
+from gold_model_v90 import MODEL_VERSION_V90, decide_v90, fit_v90_system
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
 from official_event_calendar_v830 import (
@@ -98,14 +98,14 @@ try:
     with st.spinner("Running Version 9.0 calibrated walk-forward research…"):
         gold, confirmations, source_status = download_intraday_bundle(key)
         validate_market_data(gold, confirmations)
-        result = fit_v83_system(gold, confirmations, splits, cost_bps, threshold)
+        result = fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
         fred, macro_audit = download_fred_macro()
         slow = parse_slow_factor_csv(slow_file) if slow_file else None
         macro = combine_macro_sources(fred, slow)
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
                                         threshold, cost_bps, gold)
         perpetual_consensus = free_perpetual_audit()
-        decision = decide_v83(
+        decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
             major_event=(major_event or automatic_event_lock))
 except Exception as exc:
@@ -296,10 +296,10 @@ with decision_tab:
     else:
         st.info("Qualified Elliott evidence is neutral; no probability adjustment was applied.")
     
-ledger = ForecastLedgerV83()
+ledger = ForecastLedgerV90()
 settled = ledger.settle(gold)
 ledger.record(
-    model_version=MODEL_VERSION_V83, data_timestamp=result.as_of,
+    model_version=MODEL_VERSION_V90, data_timestamp=result.as_of,
     forecast_timestamp=forecast_time, starting_price=result.spot,
     directional_outlook=decision.candidate, decision=decision.action,
     market_probability_up=result.probability_up,
@@ -376,6 +376,32 @@ with validation_tab:
     ]), hide_index=True, width="stretch")
     st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.0 abstains unless it beats 8.2.5 on both.")
     st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
+
+    st.subheader("Selective-signal reliability")
+    selective = result.selective_reliability
+    q1, q2, q3, q4 = st.columns(4)
+    q1.metric("Candidate side", selective["side"])
+    q2.metric("Comparable OOS signals", selective["observations"])
+    q3.metric("OOS side accuracy", (
+        f'{selective["accuracy"]:.1%}'
+        if pd.notna(selective["accuracy"]) else "N/A"))
+    q4.metric("90% Wilson lower bound", (
+        f'{selective["lower_bound"]:.1%}'
+        if pd.notna(selective["lower_bound"]) else "N/A"))
+    st.caption(
+        "BUY/SELL is released only when the current side has at least 30 "
+        "purged out-of-sample examples and its conservative accuracy lower "
+        "bound is at least 50%.")
+    st.dataframe(pd.DataFrame([
+        {"Ensemble member": name, "Calibration weight": weight}
+        for name, weight in result.ensemble_weights.items()
+    ]), hide_index=True, width="stretch",
+        column_config={"Calibration weight": st.column_config.NumberColumn(
+            format="%.1%%")})
+    st.caption(
+        f'Current ensemble disagreement: {result.model_disagreement:.1%} · '
+        f'Conformal interval adjustment: {result.conformal_adjustment:.3%} return · '
+        f'Median bias adjustment: {result.median_bias_adjustment:+.3%} return.')
     
 with ledger_tab:
     st.subheader("Version 9.0 forecast ledger")

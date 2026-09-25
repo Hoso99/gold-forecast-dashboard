@@ -5,7 +5,9 @@ Version 9.0 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
 ## Design
 
 - Slow, release-timestamped macro variables classify the regime as BULLISH, BEARISH or NEUTRAL.
-- Three diverse models form a calibrated next-hour ensemble.
+- Three diverse models form a calibrated next-hour ensemble. Their weights are
+  learned only from each fold's held-out calibration segment; equal weights are
+  retained whenever calibration weighting does not improve Brier score.
 - Every fold has a purged fit window, a separate calibration window and an untouched test window.
 - Causal regime, normalized cross-asset shock and market-session features time the candidate.
 - A robust jump detector compares each completed candle with a shifted 96-bar baseline, audits cross-asset co-shocks, and blocks release for four candles after an abnormal move.
@@ -15,6 +17,13 @@ Version 9.0 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
 - Expected movement must exceed twice the configured trading cost.
 - Evaluation uses every fourth 15-minute observation so one-hour outcomes do not overlap.
 - Version 9.0 must beat Version 8.2.5 on ROC-AUC and Brier score or report NO EDGE.
+- A side-specific selective-prediction gate requires at least 30 comparable
+  purged out-of-sample BUY or SELL signals and a 90% Wilson accuracy lower
+  bound of at least 50%. Weak evidence remains NO EDGE.
+- The three ensemble members must not disagree by more than 12 probability
+  points for an actionable signal.
+- Quantile forecasts are expanded with a fold-local split-conformal correction,
+  and the median forecast receives a robust calibration-window bias correction.
 - Elliott is an independently gated confirmation and cannot rescue failed statistical evidence.
 - Output is BUY, SELL, NO EDGE or BLOCKED.
 - Version 9.0 writes only to `forecast_ledger_v90.sqlite`.
@@ -68,5 +77,7 @@ Only the existing Twelve Data market-data credential is required:
 TWELVE_DATA_API_KEY = "your_key"
 ```
 
-Never commit the credential to GitHub. Binance, Bybit and OKX perpetual-market
-snapshots use public endpoints and require no API key.
+Never commit the credential to GitHub. Binance and Bybit are preferred public
+perpetual feeds, BingX and Gate are transparent regional fallbacks, and OKX is
+the third venue. These public snapshots require no API key and remain proxy
+data rather than COMEX futures.

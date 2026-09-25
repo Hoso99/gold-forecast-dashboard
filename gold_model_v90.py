@@ -15,7 +15,7 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.0-free-three-venue-live-settlement-research"
+MODEL_VERSION_V90 = "9.0.1-calibration-weighted-selective-research"
 
 
 @dataclass
@@ -226,12 +226,53 @@ def _raw_models(seed):
     ]
 
 
-def _fit_ensemble(train_x, train_y, predict_x, seed):
+def _component_probabilities(train_x, train_y, predict_x, seed):
     models, probabilities = _raw_models(seed), []
     for model in models:
         model.fit(train_x, train_y)
         probabilities.append(model.predict_proba(predict_x)[:, 1])
-    return models, np.mean(probabilities, axis=0)
+    return models, np.column_stack(probabilities)
+
+
+def _calibration_weights(probabilities, actual):
+    """Weight members using only a held-out calibration segment."""
+    losses = np.array([
+        brier_score_loss(actual, probabilities[:, i])
+        for i in range(probabilities.shape[1])], dtype=float)
+    inverse = 1.0 / np.clip(losses, 1e-4, None)
+    weights = inverse / inverse.sum()
+    equal = np.repeat(1.0 / probabilities.shape[1], probabilities.shape[1])
+    weighted_loss = brier_score_loss(actual, probabilities @ weights)
+    equal_loss = brier_score_loss(actual, probabilities @ equal)
+    return weights if weighted_loss < equal_loss else equal
+
+
+def _fit_weighted_ensemble(train_x, train_y, calibration_x, calibration_y,
+                           predict_x, seed):
+    models, calibration = _component_probabilities(
+        train_x, train_y, calibration_x, seed)
+    prediction = np.column_stack([
+        model.predict_proba(predict_x)[:, 1] for model in models])
+    weights = _calibration_weights(calibration, calibration_y)
+    raw = prediction @ weights
+    disagreement = prediction.std(axis=1)
+    return models, raw, disagreement, weights, calibration @ weights
+
+
+def _conformalize_quantiles(actual, lower, median, upper, test_lower,
+                            test_median, test_upper, coverage=.80):
+    """Split-conformal interval expansion and robust median-bias correction."""
+    actual = np.asarray(actual, dtype=float)
+    lower, median, upper = map(
+        lambda value: np.asarray(value, dtype=float), (lower, median, upper))
+    scores = np.maximum(lower - actual, actual - upper)
+    scores = np.maximum(scores, 0.0)
+    level = min(1.0, np.ceil((len(scores) + 1) * coverage) / len(scores))
+    qhat = float(np.quantile(scores, level, method="higher"))
+    bias = float(np.median(actual - median))
+    return (np.asarray(test_lower) - qhat,
+            np.asarray(test_median) + bias,
+            np.asarray(test_upper) + qhat, qhat, bias)
 
 
 def _sigmoid_calibrate(raw_cal, y_cal, raw_test):
@@ -259,6 +300,31 @@ def _folds(n, splits, gap):
             yield np.arange(train_end), np.arange(test_start, test_end)
 
 
+def selective_reliability(predictions, probability, threshold,
+                          min_observations=30):
+    """Measure side-specific out-of-sample reliability near an action."""
+    side = "BUY" if probability >= threshold else (
+        "SELL" if probability <= 1 - threshold else "NO EDGE")
+    if side == "NO EDGE":
+        return {"side": side, "qualified": False, "observations": 0,
+                "accuracy": np.nan, "lower_bound": np.nan}
+    sample = predictions[
+        predictions.probability_up >= threshold
+        if side == "BUY" else
+        predictions.probability_up <= 1 - threshold].copy()
+    correct = (sample.actual_up.eq(1) if side == "BUY"
+               else sample.actual_up.eq(0))
+    n, wins = len(sample), int(correct.sum())
+    lower = _wilson_lower(wins, n)
+    return {
+        "side": side, "qualified": bool(
+            n >= min_observations and lower >= .50),
+        "observations": n,
+        "accuracy": wins / n if n else np.nan,
+        "lower_bound": lower,
+    }
+
+
 def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
     """Purged, calibrated one-hour ensemble with an 8.2.5 champion comparison."""
     features = _v90_features(gold, confirmations)
@@ -278,16 +344,28 @@ def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
         scaler = StandardScaler().fit(X.iloc[fit_idx])
         fit_x, cal_x = scaler.transform(X.iloc[fit_idx]), scaler.transform(X.iloc[cal_idx])
         test_x = scaler.transform(X.iloc[test_idx])
-        _, raw_cal = _fit_ensemble(fit_x, y.iloc[fit_idx], cal_x, 100 + fold)
-        _, raw_test = _fit_ensemble(fit_x, y.iloc[fit_idx], test_x, 100 + fold)
+        _, raw_test, disagreement, weights, raw_cal = _fit_weighted_ensemble(
+            fit_x, y.iloc[fit_idx], cal_x, y.iloc[cal_idx],
+            test_x, 100 + fold)
         pred = pd.DataFrame(index=X.iloc[test_idx].index)
         pred["actual_return"], pred["actual_up"] = returns.iloc[test_idx], y.iloc[test_idx]
         pred["raw_probability_up"] = raw_test
         pred["probability_up"] = _sigmoid_calibrate(raw_cal, y.iloc[cal_idx], raw_test)
+        pred["model_disagreement"] = disagreement
         _, regressors = _models(300 + fold)
+        cal_forecast, test_forecast = {}, {}
         for name, model in regressors.items():
             model.fit(fit_x, returns.iloc[fit_idx])
-            pred[name] = model.predict(test_x)
+            cal_forecast[name] = model.predict(cal_x)
+            test_forecast[name] = model.predict(test_x)
+        lower, median, upper, qhat, bias = _conformalize_quantiles(
+            returns.iloc[cal_idx], cal_forecast["lower"],
+            cal_forecast["median"], cal_forecast["upper"],
+            test_forecast["lower"], test_forecast["median"],
+            test_forecast["upper"])
+        pred["lower"], pred["median"], pred["upper"] = lower, median, upper
+        pred["conformal_adjustment"] = qhat
+        pred["median_bias_adjustment"] = bias
         pred["fold"] = fold
         rows.append(pred)
     if not rows:
@@ -324,6 +402,7 @@ def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
         "Strategy max drawdown": float((equity / equity.cummax() - 1).min()),
         "Signal changes": float(
             (events.position.diff().fillna(events.position) != 0).sum()),
+        "Mean model disagreement": float(predictions.model_disagreement.mean()),
     }
     from gold_model_v82 import fit_intraday_system
     champion = fit_intraday_system(
@@ -333,23 +412,31 @@ def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
     baseline_metrics["Champion Brier score"] = champion.metrics.get("Brier score", np.nan)
 
     clean, latest = features.dropna(), features.dropna().iloc[[-1]]
-    scaler = StandardScaler().fit(X)
-    scaled, latest_scaled = scaler.transform(X), scaler.transform(latest)
     cal_size = max(200, int(len(X) * .20))
     fit_end = len(X) - cal_size - INTRADAY_HORIZON_BARS
     fit_idx = np.arange(fit_end)
     cal_idx = np.arange(fit_end + INTRADAY_HORIZON_BARS, len(X))
-    _, raw_cal = _fit_ensemble(
-        scaled[fit_idx], y.iloc[fit_idx], scaled[cal_idx], 900)
-    final_models, raw_latest = _fit_ensemble(
-        scaled[fit_idx], y.iloc[fit_idx], latest_scaled, 900)
+    scaler = StandardScaler().fit(X.iloc[fit_idx])
+    scaled, latest_scaled = scaler.transform(X), scaler.transform(latest)
+    final_models, raw_latest, disagreement, weights, raw_cal = (
+        _fit_weighted_ensemble(
+            scaled[fit_idx], y.iloc[fit_idx], scaled[cal_idx],
+            y.iloc[cal_idx], latest_scaled, 900))
     probability = float(_sigmoid_calibrate(
         raw_cal, y.iloc[cal_idx], raw_latest)[0])
     _, regressors = _models(999)
-    forecast = {}
+    forecast, calibration_forecast = {}, {}
     for name, model in regressors.items():
         model.fit(scaled[fit_idx], returns.iloc[fit_idx])
         forecast[name] = float(model.predict(latest_scaled)[0])
+        calibration_forecast[name] = model.predict(scaled[cal_idx])
+    calibrated = _conformalize_quantiles(
+        returns.iloc[cal_idx], calibration_forecast["lower"],
+        calibration_forecast["median"], calibration_forecast["upper"],
+        [forecast["lower"]], [forecast["median"]], [forecast["upper"]])
+    forecast["lower"], forecast["median"], forecast["upper"] = (
+        float(calibrated[0][0]), float(calibrated[1][0]),
+        float(calibrated[2][0]))
     sample = min(500, len(X))
     perm = permutation_importance(
         final_models[0], scaled[-sample:], y.iloc[-sample:], n_repeats=2,
@@ -371,6 +458,12 @@ def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
     result.rejection_audit = audit_technical_rejections(
         gold, confirmations, cost_bps)
     result.institutional_audit = latest_institutional_audit(gold)
+    result.model_disagreement = float(disagreement[0])
+    result.ensemble_weights = {
+        name: float(weight) for name, weight in zip(
+            ("Gradient boosting", "Extra trees", "Logistic"), weights)}
+    result.conformal_adjustment = float(calibrated[3])
+    result.median_bias_adjustment = float(calibrated[4])
     rejection = result.rejection_audit
     result.rejection_adjustment = 0.0
     if rejection["qualified"] and rejection["current_signal"]:
@@ -453,6 +546,15 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False):
         else "SELL" if probability <= 1 - threshold and result.median_return < -minimum
         else "NO EDGE")
     reasons = intraday_release_reasons(result)
+    reliability = selective_reliability(
+        result.predictions, probability, threshold)
+    result.selective_reliability = reliability
+    if candidate != "NO EDGE" and not reliability["qualified"]:
+        reasons.append(
+            "current side lacks 30 out-of-sample signals with a Wilson "
+            "accuracy lower bound of at least 50%")
+    if getattr(result, "model_disagreement", 1.0) > .12:
+        reasons.append("ensemble members disagree too strongly")
     champion_auc = result.baseline_metrics.get("Champion ROC-AUC")
     champion_brier = result.baseline_metrics.get("Champion Brier score")
     if champion_auc is not None and result.metrics.get("ROC-AUC", 0) <= champion_auc:

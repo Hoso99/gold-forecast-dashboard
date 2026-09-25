@@ -376,6 +376,32 @@ with validation_tab:
     ]), hide_index=True, width="stretch")
     st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.0 abstains unless it beats 8.2.5 on both.")
     st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
+
+    st.subheader("Selective-signal reliability")
+    selective = result.selective_reliability
+    q1, q2, q3, q4 = st.columns(4)
+    q1.metric("Candidate side", selective["side"])
+    q2.metric("Comparable OOS signals", selective["observations"])
+    q3.metric("OOS side accuracy", (
+        f'{selective["accuracy"]:.1%}'
+        if pd.notna(selective["accuracy"]) else "N/A"))
+    q4.metric("90% Wilson lower bound", (
+        f'{selective["lower_bound"]:.1%}'
+        if pd.notna(selective["lower_bound"]) else "N/A"))
+    st.caption(
+        "BUY/SELL is released only when the current side has at least 30 "
+        "purged out-of-sample examples and its conservative accuracy lower "
+        "bound is at least 50%.")
+    st.dataframe(pd.DataFrame([
+        {"Ensemble member": name, "Calibration weight": weight}
+        for name, weight in result.ensemble_weights.items()
+    ]), hide_index=True, width="stretch",
+        column_config={"Calibration weight": st.column_config.NumberColumn(
+            format="%.1%%")})
+    st.caption(
+        f'Current ensemble disagreement: {result.model_disagreement:.1%} · '
+        f'Conformal interval adjustment: {result.conformal_adjustment:.3%} return · '
+        f'Median bias adjustment: {result.median_bias_adjustment:+.3%} return.')
     
 with ledger_tab:
     st.subheader("Version 9.0 forecast ledger")
