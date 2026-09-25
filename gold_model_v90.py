@@ -17,7 +17,7 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.4-cross-venue-order-flow-power-research"
+MODEL_VERSION_V90 = "9.0.5-institutional-liquidity-proxy-research"
 
 
 def download_five_minute_gold(api_key, outputsize=5000):
@@ -654,8 +654,25 @@ def short_term_technical_trend(gold):
     }
 
 
+def institutional_liquidity_score(audit) -> float:
+    """Small directional proxy toward nearby prior liquidity; never an order."""
+    if audit is None or not np.isfinite(audit.liquidity_distance_pct):
+        return 0.0
+    proximity = float(np.clip(1 - audit.liquidity_distance_pct / .01, 0, 1))
+    direction = 1.0 if audit.nearest_liquidity == "PRIOR HIGH" else (
+        -1.0 if audit.nearest_liquidity == "PRIOR LOW" else 0.0)
+    # Compression increases breakout risk but does not reveal breakout side.
+    # It scales an already directional nearby-liquidity observation only.
+    compression = audit.compression_percentile
+    range_scale = (
+        .75 + .25 * float(np.clip(compression, 0, 1))
+        if np.isfinite(compression) else .75)
+    return float(direction * proximity * range_scale)
+
+
 def combined_directional_lean(result, macro, technical,
-                              perpetual_consensus=None, event_lock=False):
+                              perpetual_consensus=None, institutional=None,
+                              event_lock=False):
     """Transparent directional synthesis; never bypasses the action gates."""
     _, macro_score, _ = classify_macro_regime(macro, result.as_of)
     statistical = float(np.clip((result.probability_up - .5) / .15, -1, 1))
@@ -675,6 +692,7 @@ def combined_directional_lean(result, macro, technical,
         "Expected price move": expected,
         "Slow macro background": float(np.clip(macro_score / 1.5, -1, 1)),
         "Perpetual pressure proxy": microstructure,
+        "Institutional liquidity proxy": institutional_liquidity_score(institutional),
     }
     weights = {
         "Statistical forecast": .35,
@@ -682,6 +700,7 @@ def combined_directional_lean(result, macro, technical,
         "Expected price move": .15,
         "Slow macro background": .10,
         "Perpetual pressure proxy": micro_weight,
+        "Institutional liquidity proxy": .05,
     }
     denominator = sum(weights.values())
     score = float(sum(values[name] * weights[name] for name in values) / denominator)

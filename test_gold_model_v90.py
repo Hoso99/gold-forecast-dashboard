@@ -7,7 +7,8 @@ import pandas as pd
 from gold_model_v90 import (
     _calibration_weights, _conformalize_quantiles,
     _side_reversal_validation, combined_directional_lean,
-    five_minute_reversal_states, selective_reliability,
+    five_minute_reversal_states, institutional_liquidity_score,
+    selective_reliability,
     short_term_technical_trend)
 
 
@@ -70,6 +71,20 @@ class Version90AccuracyTests(unittest.TestCase):
             result, pd.DataFrame(), technical, consensus)
         self.assertEqual(lean["lean"], "BUY LEAN")
         self.assertFalse(lean["actionable"])
+
+    def test_institutional_liquidity_proxy_is_small_and_directional(self):
+        high = SimpleNamespace(
+            nearest_liquidity="PRIOR HIGH", liquidity_distance_pct=.002,
+            compression_percentile=.60)
+        low = SimpleNamespace(
+            nearest_liquidity="PRIOR LOW", liquidity_distance_pct=.002,
+            compression_percentile=.60)
+        far = SimpleNamespace(
+            nearest_liquidity="PRIOR HIGH", liquidity_distance_pct=.02,
+            compression_percentile=.60)
+        self.assertGreater(institutional_liquidity_score(high), 0)
+        self.assertLess(institutional_liquidity_score(low), 0)
+        self.assertEqual(institutional_liquidity_score(far), 0)
 
     def test_five_minute_detector_flags_exhaustion_break(self):
         n = 140
