@@ -14,7 +14,8 @@ from gold_model_v82 import (
     download_intraday_bundle, fit_intraday_system, validate_market_data,
 )
 from gold_model_v90 import (
-    MODEL_VERSION_V90, combined_directional_lean, decide_v90,
+    MODEL_VERSION_V90, audit_five_minute_reversals,
+    combined_directional_lean, decide_v90, download_five_minute_gold,
     fit_v90_system, short_term_technical_trend)
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
@@ -107,6 +108,17 @@ try:
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
                                         threshold, cost_bps, gold)
         perpetual_consensus = free_perpetual_audit()
+        try:
+            gold_5m = download_five_minute_gold(key)
+            reversal_5m = audit_five_minute_reversals(
+                gold_5m, cost_bps=cost_bps)
+        except Exception as reversal_error:
+            reversal_5m = {
+                "status": "UNAVAILABLE", "warning": "NONE",
+                "raw_warning": "NONE", "current_signal": 0,
+                "buy": {}, "sell": {}, "latest": {},
+                "detail": str(reversal_error),
+            }
         short_trend = short_term_technical_trend(gold)
         decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
@@ -271,6 +283,53 @@ with decision_tab:
             f'{directional["lean"]} is context only. The executable research '
             f'action remains {decision.action}; a lean never overrides failed '
             'validation, cost or event gates.')
+    st.subheader("Validated 5-minute early-reversal warning")
+    active_side = (
+        reversal_5m.get("buy", {}) if reversal_5m["current_signal"] > 0 else
+        reversal_5m.get("sell", {}) if reversal_5m["current_signal"] < 0 else {})
+    v1, v2, v3, v4, v5 = st.columns(5)
+    v1.metric("Released warning", reversal_5m["warning"])
+    v2.metric("Raw detector", reversal_5m["raw_warning"])
+    v3.metric("Validation gate", reversal_5m["status"])
+    v4.metric("Holdout accuracy", (
+        f'{active_side.get("accuracy"):.1%}'
+        if pd.notna(active_side.get("accuracy", pd.NA)) else "N/A"))
+    v5.metric("Profit factor", (
+        f'{active_side.get("profit_factor"):.2f}'
+        if pd.notna(active_side.get("profit_factor", pd.NA)) else "N/A"))
+    reversal_rows = []
+    for label, values in (("BUY reversal", reversal_5m.get("buy", {})),
+                          ("SELL reversal", reversal_5m.get("sell", {}))):
+        reversal_rows.append({
+            "Side": label, "Holdout cases": values.get("observations", 0),
+            "Accuracy": values.get("accuracy"),
+            "90% Wilson lower": values.get("lower_bound"),
+            "Profit factor": values.get("profit_factor"),
+            "Gate": "PASS" if values.get("qualified", False) else "FAIL",
+        })
+    st.dataframe(pd.DataFrame(reversal_rows), hide_index=True, width="stretch",
+                 column_config={
+                     "Accuracy": st.column_config.NumberColumn(format="%.1%%"),
+                     "90% Wilson lower": st.column_config.NumberColumn(format="%.1%%"),
+                     "Profit factor": st.column_config.NumberColumn(format="%.2f")})
+    if reversal_5m["warning"] != "NONE":
+        st.error(
+            f'{reversal_5m["warning"]}: a completed five-minute candle '
+            'confirmed exhaustion and a reversal break, and that side passed '
+            'its separate historical validation gate. Treat this as an early '
+            'warning—not an automatic order.')
+    elif reversal_5m["raw_warning"] != "NONE":
+        st.warning(
+            f'{reversal_5m["raw_warning"]} was detected but suppressed because '
+            'its side-specific validation gate failed.')
+    elif reversal_5m["status"] == "UNAVAILABLE":
+        st.info("Five-minute reversal feed unavailable: " + reversal_5m["detail"])
+    else:
+        st.info("No completed five-minute exhaustion-and-break reversal is active.")
+    st.caption(
+        "A side passes only with at least 30 newest holdout cases, accuracy "
+        "of at least 55%, a 90% Wilson lower bound of at least 50%, and "
+        "profit factor of at least 1.20 after configured costs.")
     st.caption(f"Data {result.as_of:%Y-%m-%d %H:%M UTC} | Expiry {forecast_time:%Y-%m-%d %H:%M UTC} | Spot USD {result.spot:,.2f}")
     if decision.reasons:
         st.warning("Action withheld: " + "; ".join(decision.reasons) + ".")

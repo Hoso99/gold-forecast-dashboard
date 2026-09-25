@@ -6,7 +6,8 @@ import pandas as pd
 
 from gold_model_v90 import (
     _calibration_weights, _conformalize_quantiles,
-    combined_directional_lean, selective_reliability,
+    _side_reversal_validation, combined_directional_lean,
+    five_minute_reversal_states, selective_reliability,
     short_term_technical_trend)
 
 
@@ -69,6 +70,31 @@ class Version90AccuracyTests(unittest.TestCase):
             result, pd.DataFrame(), technical, consensus)
         self.assertEqual(lean["lean"], "BUY LEAN")
         self.assertFalse(lean["actionable"])
+
+    def test_five_minute_detector_flags_exhaustion_break(self):
+        n = 140
+        index = pd.date_range("2026-01-01", periods=n, freq="5min", tz="UTC")
+        close = 2600 + np.sin(np.arange(n) / 4) * .3
+        close[-13:-1] = np.linspace(2600, 2610, 12)
+        close[-1] = 2607
+        open_ = np.r_[close[0], close[:-1]]
+        frame = pd.DataFrame({
+            "open": open_, "high": np.maximum(open_, close) + .3,
+            "low": np.minimum(open_, close) - .3, "close": close,
+        }, index=index)
+        frame.iloc[-1, frame.columns.get_loc("high")] = 2610.2
+        frame.iloc[-1, frame.columns.get_loc("low")] = 2606.5
+        states = five_minute_reversal_states(frame)
+        self.assertEqual(states.signal.iloc[-1], -1)
+
+    def test_reversal_validation_requires_holdout_skill(self):
+        sample = pd.DataFrame({
+            "signal": [-1] * 30,
+            "future_return": [-.003] * 27 + [.003] * 3,
+        })
+        result = _side_reversal_validation(sample, -1, 10, 30)
+        self.assertTrue(result["qualified"])
+        self.assertGreaterEqual(result["lower_bound"], .50)
 
 
 if __name__ == "__main__":

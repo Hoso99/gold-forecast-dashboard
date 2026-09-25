@@ -33,6 +33,13 @@ Version 9.0 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
   cannot override failed validation, transaction-cost or event gates.
 - A three-venue pressure conflict or an opposing short-term technical trend
   blocks an otherwise actionable candidate.
+- A separate five-minute XAU/USD exhaustion-and-break detector can issue an
+  EARLY BUY WARNING or EARLY SELL WARNING after a completed five-minute bar.
+  BUY and SELL are validated independently on their newest chronological
+  holdout cases. A warning is suppressed unless its side has at least 30
+  cases, accuracy of at least 55%, a 90% Wilson lower bound of at least 50%,
+  and profit factor of at least 1.20 after configured costs. The warning does
+  not place orders and cannot bypass the one-hour action or event gates.
 - Elliott is an independently gated confirmation and cannot rescue failed statistical evidence.
 - Output is BUY, SELL, NO EDGE or BLOCKED.
 - Version 9.0 writes only to `forecast_ledger_v90.sqlite`.

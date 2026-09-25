@@ -9,13 +9,117 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-from gold_model import ForecastResult, _models, _signal, make_features, permutation_importance
+from gold_model import (
+    ForecastResult, _download_symbol, _models, _signal, make_features,
+    permutation_importance)
 from gold_model_v82 import (
     INTRADAY_HORIZON_BARS, _wilson_lower, intraday_release_reasons)
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.2-short-term-trend-directional-lean-research"
+MODEL_VERSION_V90 = "9.0.3-validated-five-minute-reversal-research"
+
+
+def download_five_minute_gold(api_key, outputsize=5000):
+    """Download a separate 5-minute XAU/USD series for reversal warnings."""
+    frame = _download_symbol(
+        api_key, "XAU/USD", outputsize, interval="5min")
+    if len(frame) < 1200:
+        raise RuntimeError(
+            f"Only {len(frame)} five-minute candles were returned; 1,200 required.")
+    return frame
+
+
+def five_minute_reversal_states(gold_5m):
+    """Causal exhaustion-and-break detector using completed five-minute bars."""
+    close = gold_5m.close.astype(float)
+    returns = close.pct_change()
+    volatility = returns.rolling(96, min_periods=48).std().shift(1)
+    scaled_one = returns / volatility.replace(0, np.nan)
+    prior_low = gold_5m.low.shift(1)
+    prior_high = gold_5m.high.shift(1)
+    extension_up = (
+        close.shift(1) / close.shift(1).rolling(12, min_periods=8).min() - 1
+    ) / (volatility * np.sqrt(12)).replace(0, np.nan)
+    extension_down = (
+        close.shift(1) / close.shift(1).rolling(12, min_periods=8).max() - 1
+    ) / (volatility * np.sqrt(12)).replace(0, np.nan)
+    body = (gold_5m.close - gold_5m.open) / gold_5m.open
+    candle_range = (gold_5m.high - gold_5m.low).replace(0, np.nan)
+    close_location = (gold_5m.close - gold_5m.low) / candle_range
+    normal_range = candle_range.rolling(48, min_periods=24).median().shift(1)
+    expansion = candle_range / normal_range.replace(0, np.nan)
+    sell = (
+        (extension_up >= 1.25) & (close < prior_low) &
+        (scaled_one <= -.65) & (body < 0) &
+        (close_location <= .40) & (expansion >= 1.10))
+    buy = (
+        (extension_down <= -1.25) & (close > prior_high) &
+        (scaled_one >= .65) & (body > 0) &
+        (close_location >= .60) & (expansion >= 1.10))
+    signal = pd.Series(0, index=gold_5m.index, dtype=int)
+    signal.loc[buy.fillna(False)] = 1
+    signal.loc[sell.fillna(False)] = -1
+    return pd.DataFrame({
+        "signal": signal,
+        "extension_up": extension_up,
+        "extension_down": extension_down,
+        "scaled_return": scaled_one,
+        "range_expansion": expansion,
+        "close_location": close_location,
+    }, index=gold_5m.index)
+
+
+def _side_reversal_validation(sample, side, cost_bps, min_observations):
+    selected = sample[sample.signal.eq(side)].copy()
+    holdout_size = max(min_observations, int(math.ceil(len(selected) * .30)))
+    holdout = selected.tail(min(len(selected), holdout_size))
+    n = len(holdout)
+    wins = int((side * holdout.future_return > 0).sum()) if n else 0
+    accuracy = wins / n if n else np.nan
+    lower = _wilson_lower(wins, n)
+    net = side * holdout.future_return - cost_bps / 10_000
+    gains = float(net[net > 0].sum())
+    losses = float(-net[net < 0].sum())
+    profit_factor = gains / losses if losses > 0 else (
+        np.inf if gains > 0 else np.nan)
+    qualified = bool(
+        n >= min_observations and accuracy >= .55 and lower >= .50 and
+        np.isfinite(profit_factor) and profit_factor >= 1.20)
+    return {
+        "qualified": qualified, "observations": n,
+        "accuracy": accuracy, "lower_bound": lower,
+        "profit_factor": profit_factor,
+    }
+
+
+def audit_five_minute_reversals(gold_5m, cost_bps=10,
+                                min_observations=30):
+    """Validate each reversal side on a newest, untouched chronological holdout."""
+    states = five_minute_reversal_states(gold_5m)
+    future = gold_5m.close.shift(-3) / gold_5m.close - 1
+    sample = states[states.signal.ne(0)].copy()
+    sample["future_return"] = future.reindex(sample.index)
+    sample = sample.dropna(subset=["future_return"])
+    buy = _side_reversal_validation(
+        sample, 1, cost_bps, min_observations)
+    sell = _side_reversal_validation(
+        sample, -1, cost_bps, min_observations)
+    current = int(states.signal.iloc[-1])
+    side = buy if current > 0 else sell if current < 0 else None
+    warning = "EARLY BUY WARNING" if current > 0 else (
+        "EARLY SELL WARNING" if current < 0 else "NONE")
+    released = bool(side and side["qualified"])
+    return {
+        "status": "PASS" if released else (
+            "FAIL" if current else "MONITORING"),
+        "warning": warning if released else "NONE",
+        "raw_warning": warning,
+        "current_signal": current,
+        "buy": buy, "sell": sell,
+        "latest": states.iloc[-1].to_dict(),
+        "as_of": states.index[-1],
+    }
 
 
 @dataclass

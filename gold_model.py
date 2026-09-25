@@ -40,9 +40,10 @@ class ForecastResult:
     observations: int
 
 
-def _download_symbol(api_key: str, symbol: str, outputsize: int) -> pd.DataFrame:
+def _download_symbol(api_key: str, symbol: str, outputsize: int,
+                     interval: str = INTERVAL) -> pd.DataFrame:
     query = urlencode({
-        "symbol": symbol, "interval": INTERVAL, "outputsize": outputsize,
+        "symbol": symbol, "interval": interval, "outputsize": outputsize,
         "timezone": "UTC", "format": "JSON", "apikey": api_key,
     })
     try:
