@@ -187,6 +187,10 @@ with pressure_tab:
     p2.metric("Live venues", f"{perpetual_consensus.live_venues}/3")
     p3.metric("Consensus", perpetual_consensus.direction)
     p4.metric("Agreement", f"{perpetual_consensus.agreement}/3 · {perpetual_consensus.confidence}")
+    q1, q2, q3 = st.columns(3)
+    q1.metric("Purchasing power", f"{perpetual_consensus.buying_power:.1%}")
+    q2.metric("Selling power", f"{perpetual_consensus.selling_power:.1%}")
+    q3.metric("Order-flow decision", perpetual_consensus.order_flow_decision)
     perpetual_table = perpetual_display_frame(perpetual_consensus)
     st.dataframe(
         perpetual_table,
@@ -207,8 +211,10 @@ with pressure_tab:
         st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
     st.caption(
         "Free public Binance XAUUSDT, Bybit XAUUSDT and OKX XAU-USDT-SWAP "
-        "snapshots. These are synthetic perpetual proxies—not COMEX GC—and have "
-        "zero forecast weight until timestamped out-of-sample validation passes.")
+        "snapshots. These are synthetic perpetual proxies—not COMEX GC. Aggressive "
+        "trades receive 65% and displayed depth 35% of the pressure score. The "
+        "model uses at most 10% weight and requires cross-venue agreement; this "
+        "cannot reveal hidden orders or guarantee the next move.")
     
     st.subheader("Institutional liquidity and accumulation audit")
     institutional = result.institutional_audit

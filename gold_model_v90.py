@@ -17,7 +17,7 @@ from gold_model_v82 import (
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.0.3-validated-five-minute-reversal-research"
+MODEL_VERSION_V90 = "9.0.4-cross-venue-order-flow-power-research"
 
 
 def download_five_minute_gold(api_key, outputsize=5000):
@@ -664,9 +664,10 @@ def combined_directional_lean(result, macro, technical,
     microstructure = 0.0
     micro_weight = 0.0
     if perpetual_consensus is not None and perpetual_consensus.agreement >= 2:
-        microstructure = (
+        microstructure = float(getattr(
+            perpetual_consensus, "pressure_score",
             1.0 if perpetual_consensus.direction == "BUY PRESSURE" else
-            -1.0 if perpetual_consensus.direction == "SELL PRESSURE" else 0.0)
+            -1.0 if perpetual_consensus.direction == "SELL PRESSURE" else 0.0))
         micro_weight = .10 * perpetual_consensus.agreement / 3
     values = {
         "Statistical forecast": statistical,
@@ -772,9 +773,9 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
             reasons.append("SELL candidate conflicts with the short-term uptrend")
     if (perpetual_consensus is not None and
             perpetual_consensus.agreement == 3 and candidate != "NO EDGE"):
-        proxy_side = (
-            "BUY" if perpetual_consensus.direction == "BUY PRESSURE" else
-            "SELL" if perpetual_consensus.direction == "SELL PRESSURE" else None)
+        proxy_side = getattr(perpetual_consensus, "order_flow_decision", None)
+        if proxy_side == "WAIT":
+            proxy_side = None
         if proxy_side is not None and proxy_side != candidate:
             reasons.append("three-venue pressure conflicts with the candidate")
     if (elliott.qualified and candidate != "NO EDGE" and

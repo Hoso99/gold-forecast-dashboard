@@ -40,6 +40,10 @@ class PerpetualConsensus:
     live_venues: int
     confidence: str
     venues: list[VenueAudit]
+    pressure_score: float = 0.0
+    buying_power: float = 0.5
+    selling_power: float = 0.5
+    order_flow_decision: str = "WAIT"
 
 
 def _get(url: str, timeout: float = 3.5) -> Any:
@@ -199,8 +203,25 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     confidence = "HIGH" if agreement == 3 else (
         "MODERATE" if agreement == 2 else "LOW")
     status = "LIVE" if len(live) == 3 else ("PARTIAL" if live else "UNAVAILABLE")
-    return PerpetualConsensus(status, direction, agreement, len(live),
-                              confidence, venues)
+    # Aggressive trades receive more weight than displayed book depth because
+    # resting orders can be cancelled. Equal venue weighting prevents one
+    # exchange from dominating solely because its contract is more active.
+    venue_scores = []
+    for venue in live:
+        book = venue.book_imbalance if np.isfinite(venue.book_imbalance) else 0.0
+        trades = venue.trade_imbalance if np.isfinite(venue.trade_imbalance) else 0.0
+        venue_scores.append(.35 * book + .65 * trades)
+    pressure = float(np.clip(np.median(venue_scores), -1, 1)) if venue_scores else 0.0
+    buying = float((pressure + 1) / 2)
+    selling = float(1 - buying)
+    # A directional call needs two live venues, material pressure and at least
+    # two venue labels agreeing. Otherwise the observable order flow is noise.
+    order_flow_decision = "WAIT"
+    if len(live) >= 2 and agreement >= 2 and abs(pressure) >= .15:
+        order_flow_decision = "BUY" if pressure > 0 else "SELL"
+    return PerpetualConsensus(
+        status, direction, agreement, len(live), confidence, venues,
+        pressure, buying, selling, order_flow_decision)
 
 
 def display_frame(consensus: PerpetualConsensus) -> pd.DataFrame:

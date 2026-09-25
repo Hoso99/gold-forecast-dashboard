@@ -1,5 +1,7 @@
 from free_gold_perpetuals_v830 import (
-    parse_binance, parse_bingx, parse_bybit, parse_gate, parse_okx)
+    PerpetualConsensus, VenueAudit, parse_binance, parse_bingx, parse_bybit,
+    parse_gate, parse_okx)
+from free_gold_perpetuals_v90 import collect_free_perpetual_consensus
 
 
 def test_binance_buy_pressure():
@@ -39,3 +41,21 @@ def test_gate_fallback_sell_pressure():
         [{"size": -4, "price": "100"}])
     assert result.status == "LIVE"
     assert result.bias == "SELL PRESSURE"
+
+
+def test_consensus_has_power_fields(monkeypatch):
+    rows = {
+        "Binance": VenueAudit("Binance", "LIVE", "XAUUSDT", 100, .20, .60,
+                              "BUY PRESSURE", 100),
+        "Bybit": VenueAudit("Bybit", "LIVE", "XAUUSDT", 100, .10, .50,
+                            "BUY PRESSURE", 100),
+        "OKX": VenueAudit("OKX", "LIVE", "XAU-USDT-SWAP", 100, -.05, .30,
+                          "BUY PRESSURE", 100),
+    }
+    monkeypatch.setattr(
+        "free_gold_perpetuals_v90._collect_slot",
+        lambda preferred, fallback=None: rows[preferred])
+    result = collect_free_perpetual_consensus()
+    assert result.order_flow_decision == "BUY"
+    assert result.buying_power > result.selling_power
+    assert result.pressure_score > 0
