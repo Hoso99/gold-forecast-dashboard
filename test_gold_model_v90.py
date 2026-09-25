@@ -8,11 +8,24 @@ from gold_model_v90 import (
     _calibration_weights, _conformalize_quantiles,
     _side_reversal_validation, calculated_risk_plan, combined_directional_lean,
     five_minute_reversal_states, institutional_liquidity_score,
-    selective_reliability,
+    mother_candle_breakout, selective_reliability,
     short_term_technical_trend)
 
 
 class Version90AccuracyTests(unittest.TestCase):
+    def test_mother_candle_buy_and_sell_breakouts(self):
+        index = pd.date_range("2026-01-01", periods=4, freq="15min", tz="UTC")
+        base = pd.DataFrame({
+            "high": [105, 104, 103, 106], "low": [95, 96, 97, 100],
+            "close": [100, 101, 102, 105.5],
+        }, index=index)
+        buy = mother_candle_breakout(base)
+        self.assertEqual(buy["signal"], "BUY")
+        sell_frame = base.copy()
+        sell_frame.iloc[-1] = [100, 94, 94.5]
+        sell = mother_candle_breakout(sell_frame)
+        self.assertEqual(sell["signal"], "SELL")
+
     @staticmethod
     def risk_prices():
         index = pd.date_range("2026-01-01", periods=40, freq="15min", tz="UTC")
@@ -29,14 +42,14 @@ class Version90AccuracyTests(unittest.TestCase):
 
     def test_calculated_risk_sizes_and_places_buy_stop_below_market(self):
         prices = self.risk_prices()
-        plan = calculated_risk_plan("BUY", prices, 10000, risk_fraction=.0025)
+        plan = calculated_risk_plan("BUY", prices, 10000, risk_fraction=.005)
         self.assertEqual(plan["status"], "ACTIVE")
         self.assertLess(plan["stop_price"], prices.close.iloc[-1])
-        self.assertLessEqual(plan["max_ounces"] * plan["stop_distance"], 25.01)
+        self.assertLessEqual(plan["max_ounces"] * plan["stop_distance"], 50.01)
 
     def test_calculated_risk_daily_loss_lock_has_zero_size(self):
         plan = calculated_risk_plan(
-            "SELL", self.risk_prices(), 10000, realised_pnl=-100)
+            "SELL", self.risk_prices(), 10000, realised_pnl=-200)
         self.assertEqual(plan["status"], "DAILY LOSS LOCK")
         self.assertEqual(plan["estimated_lots"], 0)
 

@@ -5,12 +5,28 @@ Version 9.3 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
 ## Calculated-risk controls
 
 - Position size is released only when the final validated action is `BUY` or `SELL`.
-- Default maximum planned loss is 0.25% of paper account equity per qualified trade.
-- A 1% realised daily loss activates a zero-position lockout.
+- Default maximum planned loss is 0.50% of paper account equity per qualified trade.
+- A 2% realised daily loss activates a zero-position lockout.
 - Stop distance is the larger of 1.5 times 14-period ATR and three times estimated costs.
-- Size is capped by both the stop-loss budget and 100% notional exposure.
+- Size is capped by both the stop-loss budget and 1.5× equity notional exposure.
 - The lot estimate uses the broker contract size entered in the sidebar.
 - No order is submitted. Gaps, slippage and liquidation can exceed the planned loss.
+
+## Seven-venue pressure confirmation
+
+Gate, OKX, MEXC, Bitget and Phemex gold perpetual flow is combined with
+Kraken XAUT/USD and Coinbase PAXG-USD tokenized-gold spot flow. A confirmed
+BUY or SELL pressure decision requires at least three venues on the same side
+and at least three matching aggressive-trade imbalances. Failed connections
+remain `UNAVAILABLE` and cannot count toward confirmation.
+
+## Mother-candle breakout watch
+
+The latest completed 15-minute candles are scanned for a mother candle followed
+by one to six inside candles. A break above the mother high produces a BUY
+breakout input; a break below the mother low produces a SELL breakout input.
+The dashboard distinguishes close-confirmed breaks from wick-only breaches.
+Breaking both sides is classified as a whipsaw and contributes no direction.
 
 ## Design
 

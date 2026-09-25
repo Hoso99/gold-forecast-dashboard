@@ -287,14 +287,15 @@ def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
-    # Four XAU perpetual venues plus two tokenized-gold spot venues. The latter
+    # Five XAU perpetual venues plus two tokenized-gold spot venues. The latter
     # are explicitly labelled and contribute only observable book/trade flow.
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=7) as pool:
         futures = (
             pool.submit(_collect_slot, "Gate"),
             pool.submit(_collect_slot, "OKX"),
             pool.submit(_collect_slot, "MEXC"),
             pool.submit(_collect_slot, "Bitget"),
+            pool.submit(_collect_slot, "Phemex"),
             pool.submit(_collect_slot, "Kraken"),
             pool.submit(_collect_slot, "Coinbase"),
         )
@@ -309,7 +310,7 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     ratio = agreement / len(live) if live else 0.0
     confidence = "HIGH" if agreement >= 4 and ratio >= 2 / 3 else (
         "MODERATE" if agreement >= 3 else "LOW")
-    status = "LIVE" if len(live) == 6 else ("PARTIAL" if live else "UNAVAILABLE")
+    status = "LIVE" if len(live) == 7 else ("PARTIAL" if live else "UNAVAILABLE")
     # Aggressive trades receive more weight than displayed book depth because
     # resting orders can be cancelled. Equal venue weighting prevents one
     # exchange from dominating solely because its contract is more active.

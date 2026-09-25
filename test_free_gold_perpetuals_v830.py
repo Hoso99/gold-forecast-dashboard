@@ -69,6 +69,7 @@ def test_consensus_has_power_fields(monkeypatch):
         "free_gold_perpetuals_v90._collect_slot",
         lambda preferred, fallback=None: rows[preferred])
     result = collect_free_perpetual_consensus()
+    assert result.live_venues == 7
     assert result.order_flow_decision == "BUY"
     assert result.pressure_bias == "BUY"
     assert result.buying_power > result.selling_power

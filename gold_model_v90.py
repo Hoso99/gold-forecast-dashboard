@@ -16,16 +16,16 @@ from gold_model_v82 import _wilson_lower
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.3-thirty-minute-six-venue-order-flow-research"
+MODEL_VERSION_V90 = "9.3-thirty-minute-seven-venue-order-flow-research"
 INTRADAY_INTERVAL = "15min"
 INTRADAY_HORIZON_BARS = 2
 INTRADAY_HORIZON_LABEL = "30 minutes (2 x 15-minute bars)"
 
 
-def calculated_risk_plan(action, gold, account_equity, risk_fraction=.0025,
-                         realised_pnl=0.0, daily_loss_fraction=.01,
+def calculated_risk_plan(action, gold, account_equity, risk_fraction=.005,
+                         realised_pnl=0.0, daily_loss_fraction=.02,
                          cost_bps=10, ounces_per_lot=100.0,
-                         max_notional_fraction=1.0):
+                         max_notional_fraction=1.5):
     """Return a conservative research-only size and exit plan."""
     equity = float(account_equity)
     pnl = float(realised_pnl)
@@ -684,6 +684,64 @@ def classify_macro_regime(macro, as_of):
     return regime, score, used
 
 
+def mother_candle_breakout(gold, lookback=48, max_inside_bars=6):
+    """Detect a current mother-candle/inside-bar breakout without look-ahead."""
+    empty = {
+        "state": "NO PATTERN", "signal": "NONE", "score": 0.0,
+        "mother_time": None, "mother_high": np.nan, "mother_low": np.nan,
+        "inside_bars": 0, "close_confirmed": False,
+    }
+    if gold is None or len(gold) < 3:
+        return empty
+    frame = gold[["high", "low", "close"]].astype(float).tail(lookback + 2)
+    last = frame.iloc[-1]
+    # Prefer the most recent valid mother candle. A breakout requires at least
+    # one completed inside bar between the mother and the breakout candle.
+    for position in range(len(frame) - 3, max(-1, len(frame) - max_inside_bars - 3), -1):
+        mother = frame.iloc[position]
+        inside = frame.iloc[position + 1:-1]
+        if inside.empty or len(inside) > max_inside_bars:
+            continue
+        contained = ((inside.high <= mother.high) &
+                     (inside.low >= mother.low)).all()
+        if not contained:
+            continue
+        above = bool(last.high > mother.high)
+        below = bool(last.low < mother.low)
+        base = {
+            "mother_time": frame.index[position],
+            "mother_high": float(mother.high),
+            "mother_low": float(mother.low),
+            "inside_bars": int(len(inside)),
+        }
+        if above and below:
+            return {**empty, **base, "state": "WHIPSAW", "signal": "NONE"}
+        if above:
+            return {
+                **empty, **base, "state": "BUY BREAKOUT", "signal": "BUY",
+                "score": 1.0,
+                "close_confirmed": bool(last.close > mother.high),
+            }
+        if below:
+            return {
+                **empty, **base, "state": "SELL BREAKOUT", "signal": "SELL",
+                "score": -1.0,
+                "close_confirmed": bool(last.close < mother.low),
+            }
+    # If the latest candles are still contained, expose the levels to watch.
+    for position in range(len(frame) - 2, max(-1, len(frame) - max_inside_bars - 2), -1):
+        mother = frame.iloc[position]
+        inside = frame.iloc[position + 1:]
+        if (not inside.empty and len(inside) <= max_inside_bars and
+                ((inside.high <= mother.high) & (inside.low >= mother.low)).all()):
+            return {
+                **empty, "state": "WATCHING", "mother_time": frame.index[position],
+                "mother_high": float(mother.high), "mother_low": float(mother.low),
+                "inside_bars": int(len(inside)),
+            }
+    return empty
+
+
 def short_term_technical_trend(gold):
     """Causal multi-speed trend state using completed 15-minute candles."""
     close = gold.close.astype(float)
@@ -743,7 +801,7 @@ def institutional_liquidity_score(audit) -> float:
 
 def combined_directional_lean(result, macro, technical,
                               perpetual_consensus=None, institutional=None,
-                              event_lock=False):
+                              event_lock=False, mother_breakout=None):
     """Transparent directional synthesis; never bypasses the action gates."""
     _, macro_score, _ = classify_macro_regime(macro, result.as_of)
     statistical = float(np.clip((result.probability_up - .5) / .15, -1, 1))
@@ -774,6 +832,8 @@ def combined_directional_lean(result, macro, technical,
         "Slow macro background": float(np.clip(macro_score / 1.5, -1, 1)),
         "Perpetual pressure proxy": microstructure,
         "Institutional liquidity proxy": institutional_liquidity_score(institutional),
+        "Mother-candle breakout": float(
+            (mother_breakout or {}).get("score", 0.0)),
     }
     weights = {
         "Statistical forecast": .25,
@@ -782,6 +842,7 @@ def combined_directional_lean(result, macro, technical,
         "Slow macro background": .05,
         "Perpetual pressure proxy": micro_weight,
         "Institutional liquidity proxy": .05,
+        "Mother-candle breakout": .10,
     }
     denominator = sum(weights.values())
     score = float(sum(values[name] * weights[name] for name in values) / denominator)
@@ -893,7 +954,7 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
         if proxy_side == "WAIT":
             proxy_side = None
         if proxy_side is not None and proxy_side != candidate:
-            reasons.append("four-venue pressure conflicts with the candidate")
+            reasons.append("seven-venue pressure consensus conflicts with the candidate")
     if candidate != "NO EDGE" and pressure_side != candidate:
         reasons.append(
             "three-venue confirmed market pressure does not confirm the candidate")

@@ -17,7 +17,7 @@ from gold_model_v90 import (
     INTRADAY_HORIZON_BARS, INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL,
     MODEL_VERSION_V90, audit_five_minute_reversals,
     calculated_risk_plan, combined_directional_lean, decide_v90, download_five_minute_gold,
-    fit_v90_system, short_term_technical_trend)
+    fit_v90_system, mother_candle_breakout, short_term_technical_trend)
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
 from official_event_calendar_v830 import (
@@ -41,10 +41,16 @@ with st.sidebar:
         step=500.0, help="Used for sizing only; no order is sent.")
     risk_percent = st.slider(
         "Maximum planned risk per qualified trade (%)",
-        min_value=.10, max_value=.50, value=.25, step=.05)
+        min_value=.10, max_value=1.00, value=.50, step=.05)
+    daily_loss_percent = st.slider(
+        "Daily realised-loss lockout (%)",
+        min_value=.50, max_value=3.00, value=2.00, step=.25)
+    notional_multiple = st.slider(
+        "Maximum notional exposure (× equity)",
+        min_value=.50, max_value=2.00, value=1.50, step=.25)
     realised_pnl = st.number_input(
         "Today's realised P/L (USD)", value=0.0, step=10.0,
-        help="A loss of 1% of equity activates the daily lockout.")
+        help="The selected daily realised-loss limit activates the lockout.")
     ounces_per_lot = st.number_input(
         "Broker ounces per 1.00 lot", min_value=1.0, value=100.0, step=1.0,
         help="Confirm this contract size with your broker before using the estimate.")
@@ -135,6 +141,7 @@ try:
                 "detail": str(reversal_error),
             }
         short_trend = short_term_technical_trend(gold)
+        mother_breakout = mother_candle_breakout(gold)
         decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
             major_event=(major_event or automatic_event_lock),
@@ -143,15 +150,18 @@ try:
         directional = combined_directional_lean(
             result, macro, short_trend, perpetual_consensus,
             institutional=result.institutional_audit,
-            event_lock=(major_event or automatic_event_lock))
+            event_lock=(major_event or automatic_event_lock),
+            mother_breakout=mother_breakout)
         directional["actionable"] = (
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
         risk_plan = calculated_risk_plan(
             decision.action, gold, account_equity,
             risk_fraction=risk_percent / 100,
-            realised_pnl=realised_pnl, daily_loss_fraction=.01,
-            cost_bps=cost_bps, ounces_per_lot=ounces_per_lot)
+            realised_pnl=realised_pnl,
+            daily_loss_fraction=daily_loss_percent / 100,
+            cost_bps=cost_bps, ounces_per_lot=ounces_per_lot,
+            max_notional_fraction=notional_multiple)
 except Exception as exc:
     st.error(f"Version 9.3 could not run: {exc}")
     st.stop()
@@ -205,7 +215,7 @@ with pressure_tab:
     st.subheader("Six-venue gold market-pressure consensus")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Feed status", perpetual_consensus.status)
-    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/6")
+    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/7")
     p3.metric("Consensus", perpetual_consensus.direction)
     p4.metric("Agreement", f"{perpetual_consensus.agreement}/{perpetual_consensus.live_venues} live · {perpetual_consensus.confidence}")
     q1, q2, q3, q4 = st.columns(4)
@@ -292,6 +302,28 @@ with decision_tab:
         st.caption(
             f'Directional indication only — risk-controlled action is '
             f'{decision.action}, therefore calculated position size is zero.')
+    st.subheader("Mother-candle breakout watch")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Breakout state", mother_breakout["state"])
+    m2.metric("Mother high — BUY trigger", (
+        f'USD {mother_breakout["mother_high"]:,.2f}'
+        if pd.notna(mother_breakout["mother_high"]) else "N/A"))
+    m3.metric("Mother low — SELL trigger", (
+        f'USD {mother_breakout["mother_low"]:,.2f}'
+        if pd.notna(mother_breakout["mother_low"]) else "N/A"))
+    m4.metric("Inside candles", mother_breakout["inside_bars"])
+    if mother_breakout["signal"] in {"BUY", "SELL"}:
+        message = (
+            f'{mother_breakout["signal"]} directional breakout detected on the '
+            'latest completed 15-minute candle. ')
+        if mother_breakout["close_confirmed"]:
+            st.success(message + "The candle also closed beyond the mother-candle level.")
+        else:
+            st.warning(message + "Only the wick broke the level; close confirmation is absent.")
+    elif mother_breakout["state"] == "WATCHING":
+        st.info("Price remains inside the mother candle. Wait for a completed-candle break of either level.")
+    elif mother_breakout["state"] == "WHIPSAW":
+        st.warning("Both mother-candle levels were breached; no directional breakout signal is released.")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
