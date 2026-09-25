@@ -1,6 +1,6 @@
-# Gold Version 9.2 — Calibrated Regime-Ensemble Challenger
+# Gold Version 9.3 — Calibrated Regime-Ensemble Challenger
 
-Version 9.2 is separate from Version 8.2.5. It does not replace `app_v82.py` or `forecast_ledger_v825.sqlite` and contains no broker execution.
+Version 9.3 is separate from Version 8.2.5. It does not replace `app_v82.py` or `forecast_ledger_v825.sqlite` and contains no broker execution.
 
 ## Design
 
@@ -16,7 +16,7 @@ Version 9.2 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
 - Official release times are converted from U.S. Eastern time and displayed in GMT. After every model run, an event notice reports lockout, elevated preparation risk, or no scheduled high-impact event and names the relevant releases.
 - Expected movement must exceed twice the configured trading cost.
 - Evaluation uses every second 15-minute observation so 30-minute outcomes do not overlap.
-- Version 9.2 must beat Version 8.2.5 on ROC-AUC and Brier score or report NO EDGE.
+- Version 9.3 uses its own 30-minute walk-forward validation; Version 8.2.5 is not a comparable one-hour benchmark.
 - A side-specific selective-prediction gate requires at least 30 comparable
   purged out-of-sample BUY or SELL signals and a 90% Wilson accuracy lower
   bound of at least 50%. Weak evidence remains NO EDGE.
@@ -42,7 +42,7 @@ Version 9.2 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
   not place orders and cannot bypass the 30-minute action or event gates.
 - Elliott is an independently gated confirmation and cannot rescue failed statistical evidence.
 - Output is BUY, SELL, NO EDGE or BLOCKED.
-- Version 9.2 writes only to `forecast_ledger_v90.sqlite`.
+- Version 9.3 writes only to `forecast_ledger_v90.sqlite`.
 
 ## Run
 

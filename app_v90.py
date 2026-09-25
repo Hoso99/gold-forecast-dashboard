@@ -24,15 +24,15 @@ from official_event_calendar_v830 import (
     download_official_events, event_risk_notice, format_events_gmt,
     official_event_risk)
 
-st.set_page_config(page_title="Gold Version 9.2", page_icon="🟡", layout="wide")
-st.title("Gold Version 9.2")
+st.set_page_config(page_title="Gold Version 9.3", page_icon="🟡", layout="wide")
+st.title("Gold Version 9.3")
 st.caption("Shock-aware calibrated regime-ensemble · 30-minute forecast · market-only research")
 
 with st.sidebar:
-    st.header("Version 9.2 settings")
+    st.header("Version 9.3 settings")
     st.text_input("Candle interval", INTRADAY_INTERVAL, disabled=True)
     st.text_input("Forecast horizon", INTRADAY_HORIZON_LABEL, disabled=True)
-    threshold = st.slider("Timing probability threshold", .55, .75, .60, .01)
+    threshold = st.slider("Timing probability threshold", .55, .75, .58, .01)
     cost_bps = st.number_input("Estimated total cost (basis points)", 0, 100, 10, 5)
     splits = st.slider("Walk-forward folds", 4, 8, 5)
     major_event = st.checkbox(
@@ -53,7 +53,7 @@ with st.sidebar:
         "Optional official positioning CSV", type=["csv"],
         help=("Release-timestamped CFTC managed-money, central-bank demand or "
               "geopolitical-risk data. Future-dated observations are never used."))
-    run = st.button("Run Version 9.2", type="primary", width="stretch")
+    run = st.button("Run Version 9.3", type="primary", width="stretch")
 
 with st.expander("Investing.com three-star economic calendar", expanded=False):
     calendar_url = (
@@ -99,7 +99,7 @@ if not key:
     st.stop()
 
 try:
-    with st.spinner("Running Version 9.2 calibrated walk-forward research…"):
+    with st.spinner("Running Version 9.3 calibrated walk-forward research…"):
         gold, confirmations, source_status = download_intraday_bundle(key)
         validate_market_data(gold, confirmations)
         result = fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
@@ -135,7 +135,7 @@ try:
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
 except Exception as exc:
-    st.error(f"Version 9.2 could not run: {exc}")
+    st.error(f"Version 9.3 could not run: {exc}")
     st.stop()
 
 decision_tab, events_tab, pressure_tab, validation_tab, ledger_tab = st.tabs([
@@ -255,7 +255,7 @@ with pressure_tab:
 with decision_tab:
     lower, median, upper = price_interval(result)
     forecast_time = result.as_of + pd.Timedelta(minutes=30)
-    st.subheader("Version 9.2 decision")
+    st.subheader("Version 9.3 decision")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
@@ -423,7 +423,7 @@ ledger.record(
     gate_reasons="; ".join(decision.reasons),
 )
 if settled:
-    st.success(f"Settled {settled} previous Version 9.2 forecast(s).")
+    st.success(f"Settled {settled} previous Version 9.3 forecast(s).")
 
 with validation_tab:
     st.subheader("Live forecast settlement performance")
@@ -482,7 +482,7 @@ with validation_tab:
     
     st.subheader("Walk-forward out-of-sample performance")
     st.dataframe(pd.DataFrame([
-        {"Model": "Version 9.2", "ROC-AUC": result.metrics.get("ROC-AUC"),
+        {"Model": "Version 9.3", "ROC-AUC": result.metrics.get("ROC-AUC"),
          "Brier score": result.metrics.get("Brier score")},
     ]), hide_index=True, width="stretch")
     st.caption("Higher ROC-AUC and lower Brier score are better. Version 8.2.5 is not compared because it predicts a different one-hour target.")
@@ -515,10 +515,10 @@ with validation_tab:
         f'Median bias adjustment: {result.median_bias_adjustment:+.3%} return.')
     
 with ledger_tab:
-    st.subheader("Version 9.2 forecast ledger")
+    st.subheader("Version 9.3 forecast ledger")
     history = ledger.frame()
     st.dataframe(history, hide_index=True, width="stretch")
-    st.download_button("Download Version 9.2 ledger (CSV)", history.to_csv(index=False).encode(),
+    st.download_button("Download Version 9.3 ledger (CSV)", history.to_csv(index=False).encode(),
                        "gold_v90_forecast_ledger.csv", "text/csv")
     
     st.subheader("Technical indicators and previous-session pivots")
@@ -531,7 +531,7 @@ with ledger_tab:
     st.caption("Slow factors classify regime at their true release frequency; they do not create synthetic 15-minute releases.")
     st.caption(
         "Investing.com calendar values are displayed through its official widget "
-        "and are not scraped, copied or stored by Version 9.2.")
+        "and are not scraped, copied or stored by Version 9.3.")
     
     st.subheader("Official event-calendar audit")
     st.dataframe(official_audit, hide_index=True, width="stretch")

@@ -72,7 +72,7 @@ class Version90AccuracyTests(unittest.TestCase):
             result, pd.DataFrame(), technical, consensus)
         self.assertEqual(lean["lean"], "BUY LEAN")
         self.assertEqual(lean["pressure_indication"], "BUY")
-        self.assertEqual(lean["weights"]["Perpetual pressure proxy"], .40)
+        self.assertEqual(lean["weights"]["Perpetual pressure proxy"], .50)
         self.assertFalse(lean["actionable"])
 
     def test_institutional_liquidity_proxy_is_small_and_directional(self):
