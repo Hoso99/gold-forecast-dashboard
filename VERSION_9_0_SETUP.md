@@ -15,7 +15,7 @@ Version 9.2 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
 - The official Investing.com calendar widget displays three-star importance, previous, forecast and actual values. The user-confirmed three-star USD event checkbox blocks release within the next hour; widget data is not scraped or stored.
 - Official release times are converted from U.S. Eastern time and displayed in GMT. After every model run, an event notice reports lockout, elevated preparation risk, or no scheduled high-impact event and names the relevant releases.
 - Expected movement must exceed twice the configured trading cost.
-- Evaluation uses every fourth 15-minute observation so one-hour outcomes do not overlap.
+- Evaluation uses every second 15-minute observation so 30-minute outcomes do not overlap.
 - Version 9.2 must beat Version 8.2.5 on ROC-AUC and Brier score or report NO EDGE.
 - A side-specific selective-prediction gate requires at least 30 comparable
   purged out-of-sample BUY or SELL signals and a 90% Wilson accuracy lower
@@ -39,7 +39,7 @@ Version 9.2 is separate from Version 8.2.5. It does not replace `app_v82.py` or 
   holdout cases. A warning is suppressed unless its side has at least 30
   cases, accuracy of at least 55%, a 90% Wilson lower bound of at least 50%,
   and profit factor of at least 1.20 after configured costs. The warning does
-  not place orders and cannot bypass the one-hour action or event gates.
+  not place orders and cannot bypass the 30-minute action or event gates.
 - Elliott is an independently gated confirmation and cannot rescue failed statistical evidence.
 - Output is BUY, SELL, NO EDGE or BLOCKED.
 - Version 9.2 writes only to `forecast_ledger_v90.sqlite`.
@@ -73,10 +73,10 @@ Open `http://localhost:8503`. Version 8.2.5 may remain available separately on p
 ## Live settlement and out-of-sample reporting
 
 - Each forecast is recorded before its result is known and settles against the
-  first completed candle at or shortly after its one-hour expiry.
+  first completed candle at or shortly after its 30-minute expiry.
 - The live panel reports directional accuracy, Brier score, 80% interval
   coverage, median price error, calibration buckets and cost-aware results.
-- Trading returns use a greedy non-overlapping one-hour sample so repeated
+- Trading returns use a greedy non-overlapping 30-minute sample so repeated
   15-minute runs are not counted as independent simultaneous trades.
 - The live gate remains `INSUFFICIENT` until 30 directional forecasts settle.
 - Live performance and historical purged walk-forward performance are displayed

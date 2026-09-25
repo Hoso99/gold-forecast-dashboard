@@ -12,12 +12,14 @@ from sklearn.preprocessing import StandardScaler
 from gold_model import (
     ForecastResult, _download_symbol, _models, _signal, make_features,
     permutation_importance)
-from gold_model_v82 import (
-    INTRADAY_HORIZON_BARS, _wilson_lower, intraday_release_reasons)
+from gold_model_v82 import _wilson_lower, intraday_release_reasons
 from institutional_features_v830 import (
     institutional_features, latest_institutional_audit)
 
-MODEL_VERSION_V90 = "9.2-six-venue-order-flow-research"
+MODEL_VERSION_V90 = "9.2-thirty-minute-six-venue-order-flow-research"
+INTRADAY_INTERVAL = "15min"
+INTRADAY_HORIZON_BARS = 2
+INTRADAY_HORIZON_LABEL = "30 minutes (2 x 15-minute bars)"
 
 
 def download_five_minute_gold(api_key, outputsize=5000):
@@ -430,7 +432,7 @@ def selective_reliability(predictions, probability, threshold,
 
 
 def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
-    """Purged, calibrated one-hour ensemble with an 8.2.5 champion comparison."""
+    """Purged, calibrated 30-minute ensemble using completed 15-minute bars."""
     features = _v90_features(gold, confirmations)
     future = gold.close.shift(-INTRADAY_HORIZON_BARS) / gold.close - 1
     labelled = features.join(future.rename("future_return")).dropna()
@@ -508,12 +510,9 @@ def fit_v90_system(gold, confirmations, splits=5, cost_bps=10, threshold=.60):
             (events.position.diff().fillna(events.position) != 0).sum()),
         "Mean model disagreement": float(predictions.model_disagreement.mean()),
     }
-    from gold_model_v82 import fit_intraday_system
-    champion = fit_intraday_system(
-        gold, confirmations, splits, cost_bps, threshold)
-    baseline_metrics = dict(champion.metrics)
-    baseline_metrics["Champion ROC-AUC"] = champion.metrics.get("ROC-AUC", np.nan)
-    baseline_metrics["Champion Brier score"] = champion.metrics.get("Brier score", np.nan)
+    # Version 8.2.5 predicts a different, one-hour target and therefore is not
+    # a statistically valid champion comparison for this 30-minute model.
+    baseline_metrics = {}
 
     clean, latest = features.dropna(), features.dropna().iloc[[-1]]
     cal_size = max(200, int(len(X) * .20))

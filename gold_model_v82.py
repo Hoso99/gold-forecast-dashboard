@@ -683,6 +683,7 @@ def audit_elliott_overlay(
     min_accuracy: float = 0.53,
     min_lower_bound: float = 0.50,
     validation_fraction: float = 0.30,
+    horizon_bars: int = INTRADAY_HORIZON_BARS,
 ) -> tuple[dict, pd.DataFrame]:
     """Audit Elliott evidence on a chronological, non-overlapping holdout.
 
@@ -694,8 +695,8 @@ def audit_elliott_overlay(
     if not 0.20 <= validation_fraction <= 0.50:
         raise ValueError("validation_fraction must be between 0.20 and 0.50")
     states = causal_elliott_states(gold)
-    states["future_return"] = gold.close.shift(-INTRADAY_HORIZON_BARS) / gold.close - 1
-    sample = states.iloc[::INTRADAY_HORIZON_BARS].copy()
+    states["future_return"] = gold.close.shift(-horizon_bars) / gold.close - 1
+    sample = states.iloc[::horizon_bars].copy()
     sample = sample[(sample.elliott_bias != 0) & sample.future_return.notna()]
     sample["success"] = sample.elliott_bias * sample.future_return > 0
     validation_size = max(min_observations, int(math.ceil(len(sample) * validation_fraction)))
@@ -718,8 +719,9 @@ def apply_elliott_overlay(
     threshold: float,
     cost_bps: float,
     gold: pd.DataFrame,
+    horizon_bars: int = INTRADAY_HORIZON_BARS,
 ) -> ElliottOverlay:
-    audit, history = audit_elliott_overlay(gold)
+    audit, history = audit_elliott_overlay(gold, horizon_bars=horizon_bars)
     latest = history.iloc[-1]
     bias = int(latest.elliott_bias)
     reasons, adjustment = [], 0.0

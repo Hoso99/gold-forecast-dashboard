@@ -10,10 +10,11 @@ from free_gold_perpetuals_v830 import (
     collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
 from gold_model import price_interval, technical_snapshot
 from gold_model_v82 import (
-    INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL, apply_elliott_overlay,
+    apply_elliott_overlay,
     download_intraday_bundle, fit_intraday_system, validate_market_data,
 )
 from gold_model_v90 import (
+    INTRADAY_HORIZON_BARS, INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL,
     MODEL_VERSION_V90, audit_five_minute_reversals,
     combined_directional_lean, decide_v90, download_five_minute_gold,
     fit_v90_system, short_term_technical_trend)
@@ -25,7 +26,7 @@ from official_event_calendar_v830 import (
 
 st.set_page_config(page_title="Gold Version 9.2", page_icon="🟡", layout="wide")
 st.title("Gold Version 9.2")
-st.caption("Shock-aware calibrated regime-ensemble · one-hour forecast · market-only research")
+st.caption("Shock-aware calibrated regime-ensemble · 30-minute forecast · market-only research")
 
 with st.sidebar:
     st.header("Version 9.2 settings")
@@ -106,7 +107,8 @@ try:
         slow = parse_slow_factor_csv(slow_file) if slow_file else None
         macro = combine_macro_sources(fred, slow)
         elliott = apply_elliott_overlay(result.probability_up, result.median_return,
-                                        threshold, cost_bps, gold)
+                                        threshold, cost_bps, gold,
+                                        horizon_bars=INTRADAY_HORIZON_BARS)
         perpetual_consensus = free_perpetual_audit()
         try:
             gold_5m = download_five_minute_gold(key)
@@ -252,14 +254,14 @@ with pressure_tab:
     
 with decision_tab:
     lower, median, upper = price_interval(result)
-    forecast_time = result.as_of + pd.Timedelta(hours=1)
+    forecast_time = result.as_of + pd.Timedelta(minutes=30)
     st.subheader("Version 9.2 decision")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
     c3.metric("Risk-controlled action", decision.action)
     c4.metric("Probability up", f"{elliott.probability_up:.1%}")
-    c5.metric("Predicted price in 1 hour", f"USD {median:,.2f}")
+    c5.metric("Predicted price in 30 minutes", f"USD {median:,.2f}")
     c6.metric("80% range", f"{lower:,.2f}–{upper:,.2f}")
     d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Short-term technical trend", short_trend["trend"])
@@ -482,11 +484,8 @@ with validation_tab:
     st.dataframe(pd.DataFrame([
         {"Model": "Version 9.2", "ROC-AUC": result.metrics.get("ROC-AUC"),
          "Brier score": result.metrics.get("Brier score")},
-        {"Model": "Version 8.2.5 champion",
-         "ROC-AUC": result.baseline_metrics.get("Champion ROC-AUC"),
-         "Brier score": result.baseline_metrics.get("Champion Brier score")},
     ]), hide_index=True, width="stretch")
-    st.caption("Higher ROC-AUC and lower Brier score are better. Version 9.2 abstains unless it beats 8.2.5 on both.")
+    st.caption("Higher ROC-AUC and lower Brier score are better. Version 8.2.5 is not compared because it predicts a different one-hour target.")
     st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
 
     st.subheader("Selective-signal reliability")

@@ -12,7 +12,7 @@ class ForecastLedgerV90(ForecastLedger):
                          min_forecasts: int = 30) -> dict:
         """Score genuinely recorded forecasts after their expiry.
 
-        A greedy chronological sample removes overlapping one-hour forecasts
+        A greedy chronological sample removes overlapping 30-minute forecasts
         from trading-return metrics. Calibration metrics may use every settled
         probability forecast because they do not pretend to be independent
         trades.
