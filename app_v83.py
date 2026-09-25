@@ -6,7 +6,7 @@ import streamlit.components.v1 as components
 from forecast_ledger_v90 import ForecastLedgerV90
 from event_chart_v90 import (
     combine_chart_events, event_price_chart, manual_event_frame)
-from free_gold_perpetuals_v830 import (
+from free_gold_perpetuals_v90 import (
     collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
 from gold_model import price_interval, technical_snapshot
 from gold_model_v82 import (
@@ -16,7 +16,7 @@ from gold_model_v82 import (
 from gold_model_v90 import (
     INTRADAY_HORIZON_BARS, INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL,
     MODEL_VERSION_V90, audit_five_minute_reversals,
-    combined_directional_lean, decide_v90, download_five_minute_gold,
+    calculated_risk_plan, combined_directional_lean, decide_v90, download_five_minute_gold,
     fit_v90_system, short_term_technical_trend)
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
@@ -32,9 +32,22 @@ with st.sidebar:
     st.header("Version 9.3 settings")
     st.text_input("Candle interval", INTRADAY_INTERVAL, disabled=True)
     st.text_input("Forecast horizon", INTRADAY_HORIZON_LABEL, disabled=True)
-    threshold = st.slider("Timing probability threshold", .55, .75, .62, .01)
+    threshold = st.slider("Timing probability threshold", .55, .75, .68, .01)
     cost_bps = st.number_input("Estimated total cost (basis points)", 0, 100, 10, 5)
     splits = st.slider("Walk-forward folds", 4, 8, 5)
+    st.subheader("Calculated-risk limits")
+    account_equity = st.number_input(
+        "Paper account equity (USD)", min_value=100.0, value=10000.0,
+        step=500.0, help="Used for sizing only; no order is sent.")
+    risk_percent = st.slider(
+        "Maximum planned risk per qualified trade (%)",
+        min_value=.10, max_value=.50, value=.25, step=.05)
+    realised_pnl = st.number_input(
+        "Today's realised P/L (USD)", value=0.0, step=10.0,
+        help="A loss of 1% of equity activates the daily lockout.")
+    ounces_per_lot = st.number_input(
+        "Broker ounces per 1.00 lot", min_value=1.0, value=100.0, step=1.0,
+        help="Confirm this contract size with your broker before using the estimate.")
     major_event = st.checkbox(
         "Investing.com 3-star USD event within next hour",
         help="Check this after reviewing the embedded calendar. It blocks forecast release.")
@@ -134,6 +147,11 @@ try:
         directional["actionable"] = (
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
+        risk_plan = calculated_risk_plan(
+            decision.action, gold, account_equity,
+            risk_fraction=risk_percent / 100,
+            realised_pnl=realised_pnl, daily_loss_fraction=.01,
+            cost_bps=cost_bps, ounces_per_lot=ounces_per_lot)
 except Exception as exc:
     st.error(f"Version 9.3 could not run: {exc}")
     st.stop()
@@ -184,10 +202,10 @@ with events_tab:
         "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
     
 with pressure_tab:
-    st.subheader("Four-venue XAU perpetual consensus")
+    st.subheader("Six-venue gold market-pressure consensus")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Feed status", perpetual_consensus.status)
-    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/4")
+    p2.metric("Live venues", f"{perpetual_consensus.live_venues}/6")
     p3.metric("Consensus", perpetual_consensus.direction)
     p4.metric("Agreement", f"{perpetual_consensus.agreement}/{perpetual_consensus.live_venues} live · {perpetual_consensus.confidence}")
     q1, q2, q3, q4 = st.columns(4)
@@ -214,11 +232,13 @@ with pressure_tab:
     else:
         st.info("No reliable cross-venue XAU perpetual pressure consensus is present.")
     st.caption(
-        "Reachable public Gate, OKX, MEXC and Bitget gold-linked "
-        "snapshots. These are synthetic perpetual proxies—not COMEX GC. Aggressive "
+        "Gate, OKX, MEXC and Bitget XAU contracts plus Kraken XAUT/USD and "
+        "Coinbase PAXG-USD tokenized-gold spot proxies. These are gold-linked "
+        "market proxies—not COMEX GC. Aggressive "
         "trades receive 65% and displayed depth 35% of the pressure score. The "
-        "pressure can receive up to 50% contextual weight but still requires "
-        "cross-venue agreement and conservative release gates; this "
+        "pressure can receive up to 70% contextual weight. Confirmation requires "
+        "at least three agreeing venues with aligned aggressive flow plus "
+        "ultra-conservative final-action gates; this "
         "cannot reveal hidden orders or guarantee the next move.")
     
     st.subheader("Institutional liquidity and accumulation audit")
@@ -258,6 +278,20 @@ with decision_tab:
     lower, median, upper = price_interval(result)
     forecast_time = result.as_of + pd.Timedelta(minutes=30)
     st.subheader("Version 9.3 decision")
+    if directional["indication"] == "BUY":
+        st.success(
+            f'EVERY-RUN DIRECTIONAL INDICATION: BUY · '
+            f'{directional["confidence"]} confidence · '
+            f'combined score {directional["score"]:+.2f}')
+    else:
+        st.error(
+            f'EVERY-RUN DIRECTIONAL INDICATION: SELL · '
+            f'{directional["confidence"]} confidence · '
+            f'combined score {directional["score"]:+.2f}')
+    if decision.action not in {"BUY", "SELL"}:
+        st.caption(
+            f'Directional indication only — risk-controlled action is '
+            f'{decision.action}, therefore calculated position size is zero.')
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Slow macro background", decision.macro_regime)
     c2.metric("Timing candidate", decision.candidate)
@@ -268,7 +302,7 @@ with decision_tab:
     d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Short-term technical trend", short_trend["trend"])
     d2.metric("Priority market-pressure indication", directional["pressure_indication"])
-    d3.metric("All-source directional lean", directional["lean"])
+    d3.metric("Every-run BUY/SELL indication", directional["indication"])
     d4.metric("Evidence alignment", f'{directional["aligned"]}/{directional["active"]}')
     d5.metric("Lean confidence", directional["confidence"])
     st.progress((directional["score"] + 1) / 2,
@@ -304,6 +338,23 @@ with decision_tab:
             f'{directional["lean"]} is context only. The executable research '
             f'action remains {decision.action}; a lean never overrides failed '
             'validation, cost or event gates.')
+    st.subheader("Calculated-risk plan")
+    r1, r2, r3, r4, r5 = st.columns(5)
+    r1.metric("Position status", risk_plan["status"])
+    r2.metric("Maximum planned loss", f'USD {risk_plan["risk_budget"]:,.2f}')
+    r3.metric("Maximum gold size", f'{risk_plan["max_ounces"]:.3f} oz')
+    r4.metric("Estimated broker size", f'{risk_plan["estimated_lots"]:.4f} lots')
+    r5.metric("Planned reward:risk", (
+        f'{risk_plan["reward_risk"]:.1f}:1' if risk_plan["status"] == "ACTIVE" else "N/A"))
+    if risk_plan["status"] == "ACTIVE":
+        st.warning(
+            f'Illustrative stop: USD {risk_plan["stop_price"]:,.2f} · '
+            f'target: USD {risk_plan["target_price"]:,.2f} · '
+            f'stop distance: USD {risk_plan["stop_distance"]:,.2f}. '
+            'Do not increase the size after entry. Stops are not guaranteed; '
+            'gaps and slippage can cause a larger loss.')
+    else:
+        st.info(f'Position size is zero: {risk_plan["reason"]}.')
     st.subheader("Validated 5-minute early-reversal warning")
     active_side = (
         reversal_5m.get("buy", {}) if reversal_5m["current_signal"] > 0 else
@@ -506,9 +557,9 @@ with validation_tab:
         f'{selective["lower_bound"]:.1%}'
         if pd.notna(selective["lower_bound"]) else "N/A"))
     st.caption(
-        "BUY/SELL is released only when the current side has at least 40 "
+        "BUY/SELL is released only when the current side has at least 80 "
         "purged out-of-sample examples and its conservative accuracy lower "
-        "bound is at least 52%.")
+        "bound is at least 58%.")
     st.dataframe(pd.DataFrame([
         {"Ensemble member": name, "Calibration weight": weight}
         for name, weight in result.ensemble_weights.items()

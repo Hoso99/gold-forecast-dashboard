@@ -287,29 +287,29 @@ def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
-    # These four venues are reachable from the deployed cloud region. Permanently
-    # blocked or unsupported slots are excluded rather than displayed as data.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Four XAU perpetual venues plus two tokenized-gold spot venues. The latter
+    # are explicitly labelled and contribute only observable book/trade flow.
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures = (
             pool.submit(_collect_slot, "Gate"),
             pool.submit(_collect_slot, "OKX"),
             pool.submit(_collect_slot, "MEXC"),
             pool.submit(_collect_slot, "Bitget"),
+            pool.submit(_collect_slot, "Kraken"),
+            pool.submit(_collect_slot, "Coinbase"),
         )
         venues = [future.result() for future in futures]
     live = [venue for venue in venues if venue.status == "LIVE"]
     buys = sum(venue.bias == "BUY PRESSURE" for venue in live)
     sells = sum(venue.bias == "SELL PRESSURE" for venue in live)
     agreement = max(buys, sells)
-    # Conservative release: every currently live venue must agree. With fewer
-    # than three valid venues the pressure layer cannot issue BUY or SELL.
-    required = len(live) if len(live) >= 3 else 3
+    required = 3
     direction = "BUY PRESSURE" if buys >= required and buys > sells else (
         "SELL PRESSURE" if sells >= required and sells > buys else "NO CONSENSUS")
     ratio = agreement / len(live) if live else 0.0
-    confidence = "HIGH" if len(live) >= 4 and ratio >= .75 else (
-        "MODERATE" if len(live) >= 3 and ratio >= .60 else "LOW")
-    status = "LIVE" if len(live) == 4 else ("PARTIAL" if live else "UNAVAILABLE")
+    confidence = "HIGH" if agreement >= 4 and ratio >= 2 / 3 else (
+        "MODERATE" if agreement >= 3 else "LOW")
+    status = "LIVE" if len(live) == 6 else ("PARTIAL" if live else "UNAVAILABLE")
     # Aggressive trades receive more weight than displayed book depth because
     # resting orders can be cancelled. Equal venue weighting prevents one
     # exchange from dominating solely because its contract is more active.
@@ -324,8 +324,17 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     # A directional call needs two live venues, material pressure and at least
     # two venue labels agreeing. Otherwise the observable order flow is noise.
     order_flow_decision = "WAIT"
-    if len(live) >= 3 and agreement >= required and abs(pressure) >= .20:
-        order_flow_decision = "BUY" if pressure > 0 else "SELL"
+    confirmed_side = 1 if direction == "BUY PRESSURE" else (
+        -1 if direction == "SELL PRESSURE" else 0)
+    agreeing = [venue for venue in live if (
+        venue.bias == ("BUY PRESSURE" if confirmed_side > 0 else "SELL PRESSURE"))]
+    aggressive_confirmations = sum(
+        np.isfinite(venue.trade_imbalance) and
+        np.sign(venue.trade_imbalance) == confirmed_side and
+        abs(venue.trade_imbalance) >= .15
+        for venue in agreeing)
+    if confirmed_side and len(agreeing) >= 3 and aggressive_confirmations >= 3:
+        order_flow_decision = "BUY" if confirmed_side > 0 else "SELL"
     # Earlier directional information for the UI. This is deliberately easier
     # to trigger than the confirmed decision and is never an execution approval.
     pressure_bias = "WAIT"

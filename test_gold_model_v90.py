@@ -6,13 +6,40 @@ import pandas as pd
 
 from gold_model_v90 import (
     _calibration_weights, _conformalize_quantiles,
-    _side_reversal_validation, combined_directional_lean,
+    _side_reversal_validation, calculated_risk_plan, combined_directional_lean,
     five_minute_reversal_states, institutional_liquidity_score,
     selective_reliability,
     short_term_technical_trend)
 
 
 class Version90AccuracyTests(unittest.TestCase):
+    @staticmethod
+    def risk_prices():
+        index = pd.date_range("2026-01-01", periods=40, freq="15min", tz="UTC")
+        close = np.linspace(2600, 2620, len(index))
+        return pd.DataFrame({
+            "open": close - .2, "high": close + 2, "low": close - 2,
+            "close": close,
+        }, index=index)
+
+    def test_calculated_risk_is_zero_without_validated_action(self):
+        plan = calculated_risk_plan("NO EDGE", self.risk_prices(), 10000)
+        self.assertEqual(plan["status"], "NO POSITION")
+        self.assertEqual(plan["max_ounces"], 0)
+
+    def test_calculated_risk_sizes_and_places_buy_stop_below_market(self):
+        prices = self.risk_prices()
+        plan = calculated_risk_plan("BUY", prices, 10000, risk_fraction=.0025)
+        self.assertEqual(plan["status"], "ACTIVE")
+        self.assertLess(plan["stop_price"], prices.close.iloc[-1])
+        self.assertLessEqual(plan["max_ounces"] * plan["stop_distance"], 25.01)
+
+    def test_calculated_risk_daily_loss_lock_has_zero_size(self):
+        plan = calculated_risk_plan(
+            "SELL", self.risk_prices(), 10000, realised_pnl=-100)
+        self.assertEqual(plan["status"], "DAILY LOSS LOCK")
+        self.assertEqual(plan["estimated_lots"], 0)
+
     def test_calibration_weights_favour_better_member(self):
         actual = np.array([0, 0, 1, 1])
         probabilities = np.column_stack([
@@ -71,8 +98,9 @@ class Version90AccuracyTests(unittest.TestCase):
         lean = combined_directional_lean(
             result, pd.DataFrame(), technical, consensus)
         self.assertEqual(lean["lean"], "BUY LEAN")
+        self.assertEqual(lean["indication"], "BUY")
         self.assertEqual(lean["pressure_indication"], "BUY")
-        self.assertEqual(lean["weights"]["Perpetual pressure proxy"], .50)
+        self.assertEqual(lean["weights"]["Perpetual pressure proxy"], .70)
         self.assertFalse(lean["actionable"])
 
     def test_institutional_liquidity_proxy_is_small_and_directional(self):

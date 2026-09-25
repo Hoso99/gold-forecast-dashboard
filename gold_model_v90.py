@@ -22,6 +22,60 @@ INTRADAY_HORIZON_BARS = 2
 INTRADAY_HORIZON_LABEL = "30 minutes (2 x 15-minute bars)"
 
 
+def calculated_risk_plan(action, gold, account_equity, risk_fraction=.0025,
+                         realised_pnl=0.0, daily_loss_fraction=.01,
+                         cost_bps=10, ounces_per_lot=100.0,
+                         max_notional_fraction=1.0):
+    """Return a conservative research-only size and exit plan."""
+    equity = float(account_equity)
+    pnl = float(realised_pnl)
+    side = str(action).upper()
+    empty = {
+        "status": "NO POSITION", "reason": "validated action is not BUY or SELL",
+        "risk_budget": 0.0, "risk_fraction": float(risk_fraction),
+        "stop_distance": np.nan, "stop_price": np.nan,
+        "target_price": np.nan, "max_ounces": 0.0, "estimated_lots": 0.0,
+        "reward_risk": 1.5,
+    }
+    if side not in {"BUY", "SELL"}:
+        return empty
+    if equity <= 0 or not 0 < risk_fraction <= .01:
+        return {**empty, "status": "BLOCKED", "reason": "invalid equity or risk limit"}
+    if daily_loss_fraction <= 0 or pnl <= -(equity * daily_loss_fraction):
+        return {**empty, "status": "DAILY LOSS LOCK", "reason": "daily loss limit reached"}
+    required = {"high", "low", "close"}
+    if len(gold) < 20 or not required.issubset(gold.columns):
+        return {**empty, "status": "BLOCKED", "reason": "insufficient price history"}
+    close = gold.close.astype(float)
+    previous = close.shift(1)
+    true_range = pd.concat([
+        gold.high.astype(float) - gold.low.astype(float),
+        (gold.high.astype(float) - previous).abs(),
+        (gold.low.astype(float) - previous).abs(),
+    ], axis=1).max(axis=1)
+    atr = float(true_range.rolling(14, min_periods=14).mean().iloc[-1])
+    spot = float(close.iloc[-1])
+    cost_floor = spot * max(float(cost_bps), 0.0) / 10_000 * 3
+    stop_distance = max(1.5 * atr, cost_floor)
+    if not np.isfinite(stop_distance) or stop_distance <= 0 or spot <= 0:
+        return {**empty, "status": "BLOCKED", "reason": "invalid ATR or spot price"}
+    risk_budget = equity * float(risk_fraction)
+    risk_sized_ounces = risk_budget / stop_distance
+    notional_sized_ounces = equity * float(max_notional_fraction) / spot
+    ounces = max(0.0, min(risk_sized_ounces, notional_sized_ounces))
+    direction = 1 if side == "BUY" else -1
+    return {
+        "status": "ACTIVE", "reason": "all release and daily-risk gates passed",
+        "risk_budget": risk_budget, "risk_fraction": float(risk_fraction),
+        "stop_distance": stop_distance,
+        "stop_price": spot - direction * stop_distance,
+        "target_price": spot + direction * stop_distance * 1.5,
+        "max_ounces": ounces,
+        "estimated_lots": ounces / float(ounces_per_lot),
+        "reward_risk": 1.5,
+    }
+
+
 def download_five_minute_gold(api_key, outputsize=5000):
     """Download a separate 5-minute XAU/USD series for reversal warnings."""
     frame = _download_symbol(
@@ -435,17 +489,17 @@ def balanced_release_reasons(result) -> list[str]:
     """Conservative 30-minute evidence gates."""
     metrics = result.metrics
     reasons = []
-    if metrics.get("ROC-AUC", 0) < .55:
-        reasons.append("30-minute ROC-AUC is below 0.55")
+    if metrics.get("ROC-AUC", 0) < .60:
+        reasons.append("30-minute ROC-AUC is below 0.60")
     if metrics.get("Strategy total return", 0) <= 0:
         reasons.append("30-minute walk-forward strategy return is not positive")
-    if metrics.get("Strategy max drawdown", -1) < -.08:
-        reasons.append("30-minute walk-forward drawdown exceeds 8%")
+    if metrics.get("Strategy max drawdown", -1) < -.03:
+        reasons.append("30-minute walk-forward drawdown exceeds 3%")
     coverage = metrics.get("80% interval coverage", 0)
     if not .70 <= coverage <= .90:
         reasons.append("30-minute interval coverage is outside 70% to 90%")
-    if metrics.get("Signal changes", 0) < 30:
-        reasons.append("fewer than 30 non-overlapping signal changes")
+    if metrics.get("Signal changes", 0) < 75:
+        reasons.append("fewer than 75 non-overlapping signal changes")
     return reasons
 
 
@@ -710,8 +764,8 @@ def combined_directional_lean(result, macro, technical,
         # passes its coverage/agreement gate. It remains a proxy, not COMEX GC.
         pressure_confidence = getattr(perpetual_consensus, "confidence", "LOW")
         micro_weight = (
-            .50 if pressure_confidence == "HIGH"
-            else .35 if pressure_confidence == "MODERATE"
+            .70 if pressure_confidence == "HIGH"
+            else .30 if pressure_confidence == "MODERATE"
             else .10)
     values = {
         "Statistical forecast": statistical,
@@ -732,6 +786,7 @@ def combined_directional_lean(result, macro, technical,
     denominator = sum(weights.values())
     score = float(sum(values[name] * weights[name] for name in values) / denominator)
     lean = "BUY LEAN" if score >= 0 else "SELL LEAN"
+    indication = "BUY" if score >= 0 else "SELL"
     confidence = "HIGH" if abs(score) >= .55 else (
         "MODERATE" if abs(score) >= .30 else "LOW")
     if event_lock:
@@ -740,7 +795,8 @@ def combined_directional_lean(result, macro, technical,
                   if abs(value) >= .10)
     active = sum(abs(value) >= .10 for value in values.values())
     return {
-        "lean": lean, "score": score, "confidence": confidence,
+        "lean": lean, "indication": indication,
+        "score": score, "confidence": confidence,
         "aligned": aligned, "active": active,
         "components": values, "weights": weights,
         "pressure_indication": pressure_indication,
@@ -752,7 +808,7 @@ def combined_directional_lean(result, macro, technical,
 
 def non_overlapping_evaluation(result, threshold, cost_bps):
     sample = result.predictions.iloc[::INTRADAY_HORIZON_BARS].copy()
-    minimum = 3 * cost_bps / 10_000
+    minimum = 5 * cost_bps / 10_000
     sample["position"] = 0
     sample.loc[
         (sample.probability_up >= threshold) &
@@ -781,7 +837,7 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
                technical=None, perpetual_consensus=None):
     regime, _, evidence = classify_macro_regime(macro, result.as_of)
     evaluation = non_overlapping_evaluation(result, threshold, cost_bps)
-    minimum = 3 * cost_bps / 10_000
+    minimum = 5 * cost_bps / 10_000
     probability = float(elliott.probability_up)
     pressure_side = getattr(perpetual_consensus, "order_flow_decision", "WAIT")
     pressure_confidence = getattr(perpetual_consensus, "confidence", "LOW")
@@ -797,13 +853,13 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
     reasons = balanced_release_reasons(result)
     reliability = selective_reliability(
         result.predictions, probability, reliability_threshold,
-        min_observations=40, min_lower_bound=.52)
+        min_observations=80, min_lower_bound=.58)
     result.selective_reliability = reliability
     if candidate != "NO EDGE" and not reliability["qualified"]:
         reasons.append(
-            "current side lacks 40 out-of-sample signals with a Wilson "
-            "accuracy lower bound of at least 52%")
-    if getattr(result, "model_disagreement", 1.0) > .10:
+            "current side lacks 80 out-of-sample signals with a Wilson "
+            "accuracy lower bound of at least 58%")
+    if getattr(result, "model_disagreement", 1.0) > .05:
         reasons.append("ensemble members disagree too strongly")
     champion_auc = result.baseline_metrics.get("Champion ROC-AUC")
     champion_brier = result.baseline_metrics.get("Champion Brier score")
@@ -813,12 +869,12 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
         reasons.append("Version 9.0 did not beat Version 8.2.5 calibration")
     if result.metrics.get("Calibration improvement", 0) < 0:
         reasons.append("fold-local calibration did not improve Brier score")
-    if evaluation["Trades"] < 30:
-        reasons.append("fewer than 30 non-overlapping cost-aware trades")
+    if evaluation["Trades"] < 75:
+        reasons.append("fewer than 75 non-overlapping cost-aware trades")
     if evaluation["Net return"] <= 0:
         reasons.append("non-overlapping cost-aware return is not positive")
-    if np.isfinite(evaluation["Profit factor"]) and evaluation["Profit factor"] < 1.30:
-        reasons.append("cost-aware profit factor is below 1.30")
+    if np.isfinite(evaluation["Profit factor"]) and evaluation["Profit factor"] < 1.75:
+        reasons.append("cost-aware profit factor is below 1.75")
     if candidate == "BUY" and regime == "BEARISH":
         reasons.append("BUY candidate conflicts with bearish macro regime")
     if candidate == "SELL" and regime == "BULLISH":
@@ -828,13 +884,19 @@ def decide_v90(result, macro, elliott, threshold, cost_bps, major_event=False,
             reasons.append("BUY candidate conflicts with the short-term downtrend")
         if candidate == "SELL" and technical["trend"] == "UPTREND":
             reasons.append("SELL candidate conflicts with the short-term uptrend")
+        if candidate in {"BUY", "SELL"} and technical["trend"] == "RANGE":
+            reasons.append("short-term trend is range-bound rather than aligned")
     if (perpetual_consensus is not None and
-            perpetual_consensus.confidence == "HIGH" and candidate != "NO EDGE"):
+            getattr(perpetual_consensus, "order_flow_decision", "WAIT") in
+            {"BUY", "SELL"} and candidate != "NO EDGE"):
         proxy_side = getattr(perpetual_consensus, "order_flow_decision", None)
         if proxy_side == "WAIT":
             proxy_side = None
         if proxy_side is not None and proxy_side != candidate:
-            reasons.append("three-venue pressure conflicts with the candidate")
+            reasons.append("four-venue pressure conflicts with the candidate")
+    if candidate != "NO EDGE" and pressure_side != candidate:
+        reasons.append(
+            "three-venue confirmed market pressure does not confirm the candidate")
     if (elliott.qualified and candidate != "NO EDGE" and
             elliott.current_bias not in {candidate, "NEUTRAL"}):
         reasons.append("qualified Elliott structure contradicts the candidate")

@@ -2,6 +2,16 @@
 
 Version 9.3 is separate from Version 8.2.5. It does not replace `app_v82.py` or `forecast_ledger_v825.sqlite` and contains no broker execution.
 
+## Calculated-risk controls
+
+- Position size is released only when the final validated action is `BUY` or `SELL`.
+- Default maximum planned loss is 0.25% of paper account equity per qualified trade.
+- A 1% realised daily loss activates a zero-position lockout.
+- Stop distance is the larger of 1.5 times 14-period ATR and three times estimated costs.
+- Size is capped by both the stop-loss budget and 100% notional exposure.
+- The lot estimate uses the broker contract size entered in the sidebar.
+- No order is submitted. Gaps, slippage and liquidation can exceed the planned loss.
+
 ## Design
 
 - Slow, release-timestamped macro variables classify the regime as BULLISH, BEARISH or NEUTRAL.
