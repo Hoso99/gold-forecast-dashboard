@@ -25,7 +25,8 @@ INTRADAY_HORIZON_LABEL = "30 minutes (2 x 15-minute bars)"
 def calculated_risk_plan(action, gold, account_equity, risk_fraction=.005,
                          realised_pnl=0.0, daily_loss_fraction=.02,
                          cost_bps=10, ounces_per_lot=100.0,
-                         max_notional_fraction=1.5):
+                         max_notional_fraction=1.5, atr_multiple=1.5,
+                         reward_risk=1.5):
     """Return a conservative research-only size and exit plan."""
     equity = float(account_equity)
     pnl = float(realised_pnl)
@@ -35,7 +36,7 @@ def calculated_risk_plan(action, gold, account_equity, risk_fraction=.005,
         "risk_budget": 0.0, "risk_fraction": float(risk_fraction),
         "stop_distance": np.nan, "stop_price": np.nan,
         "target_price": np.nan, "max_ounces": 0.0, "estimated_lots": 0.0,
-        "reward_risk": 1.5,
+        "reward_risk": float(reward_risk),
     }
     if side not in {"BUY", "SELL"}:
         return empty
@@ -56,7 +57,7 @@ def calculated_risk_plan(action, gold, account_equity, risk_fraction=.005,
     atr = float(true_range.rolling(14, min_periods=14).mean().iloc[-1])
     spot = float(close.iloc[-1])
     cost_floor = spot * max(float(cost_bps), 0.0) / 10_000 * 3
-    stop_distance = max(1.5 * atr, cost_floor)
+    stop_distance = max(float(atr_multiple) * atr, cost_floor)
     if not np.isfinite(stop_distance) or stop_distance <= 0 or spot <= 0:
         return {**empty, "status": "BLOCKED", "reason": "invalid ATR or spot price"}
     risk_budget = equity * float(risk_fraction)
@@ -69,10 +70,10 @@ def calculated_risk_plan(action, gold, account_equity, risk_fraction=.005,
         "risk_budget": risk_budget, "risk_fraction": float(risk_fraction),
         "stop_distance": stop_distance,
         "stop_price": spot - direction * stop_distance,
-        "target_price": spot + direction * stop_distance * 1.5,
+        "target_price": spot + direction * stop_distance * float(reward_risk),
         "max_ounces": ounces,
         "estimated_lots": ounces / float(ounces_per_lot),
-        "reward_risk": 1.5,
+        "reward_risk": float(reward_risk),
     }
 
 
@@ -801,7 +802,8 @@ def institutional_liquidity_score(audit) -> float:
 
 def combined_directional_lean(result, macro, technical,
                               perpetual_consensus=None, institutional=None,
-                              event_lock=False, mother_breakout=None):
+                              event_lock=False, mother_breakout=None,
+                              footprint=None):
     """Transparent directional synthesis; never bypasses the action gates."""
     _, macro_score, _ = classify_macro_regime(macro, result.as_of)
     statistical = float(np.clip((result.probability_up - .5) / .15, -1, 1))
@@ -834,6 +836,10 @@ def combined_directional_lean(result, macro, technical,
         "Institutional liquidity proxy": institutional_liquidity_score(institutional),
         "Mother-candle breakout": float(
             (mother_breakout or {}).get("score", 0.0)),
+        "Latest footprint": float(np.clip(
+            getattr(footprint, "score", 0.0), -1, 1)),
+        "10-candle footprint pressure": float(np.clip(
+            getattr(footprint, "ten_bar_score", 0.0), -1, 1)),
     }
     weights = {
         "Statistical forecast": .25,
@@ -843,6 +849,8 @@ def combined_directional_lean(result, macro, technical,
         "Perpetual pressure proxy": micro_weight,
         "Institutional liquidity proxy": .05,
         "Mother-candle breakout": .10,
+        "Latest footprint": .10 if getattr(footprint, "status", "UNAVAILABLE") not in {"UNAVAILABLE", "INVALID"} else 0.0,
+        "10-candle footprint pressure": .05 if getattr(footprint, "ten_bar_signal", "NONE") in {"BUY", "SELL"} else 0.0,
     }
     denominator = sum(weights.values())
     score = float(sum(values[name] * weights[name] for name in values) / denominator)
@@ -866,6 +874,128 @@ def combined_directional_lean(result, macro, technical,
         "actionable": False,
     }
 
+
+
+def scenario_price_levels(side, gold, cost_bps=10, atr_multiple=1.5,
+                          reward_risk=1.5):
+    """Return non-position-sized entry/stop/target levels for a BUY/SELL scenario."""
+    side = str(side).upper()
+    if side not in {"BUY", "SELL"} or gold is None or len(gold) < 20:
+        return {"entry": np.nan, "stop": np.nan, "target": np.nan}
+    required = {"high", "low", "close"}
+    if not required.issubset(gold.columns):
+        return {"entry": np.nan, "stop": np.nan, "target": np.nan}
+    close = gold.close.astype(float)
+    previous = close.shift(1)
+    true_range = pd.concat([
+        gold.high.astype(float) - gold.low.astype(float),
+        (gold.high.astype(float) - previous).abs(),
+        (gold.low.astype(float) - previous).abs(),
+    ], axis=1).max(axis=1)
+    atr = float(true_range.rolling(14, min_periods=14).mean().iloc[-1])
+    entry = float(close.iloc[-1])
+    cost_floor = entry * max(float(cost_bps), 0.0) / 10_000 * 3
+    distance = max(float(atr_multiple) * atr, cost_floor)
+    if not np.isfinite(distance) or distance <= 0 or entry <= 0:
+        return {"entry": entry, "stop": np.nan, "target": np.nan}
+    direction = 1 if side == "BUY" else -1
+    return {
+        "entry": entry,
+        "stop": entry - direction * distance,
+        "target": entry + direction * distance * float(reward_risk),
+    }
+
+
+def sell_setup_assessment(probability_up, macro_regime, technical,
+                          footprint=None, perpetual_consensus=None,
+                          mother_breakout=None, validated_action="NO EDGE"):
+    """Transparent bearish-readiness checklist; never releases an order itself."""
+    trend = str((technical or {}).get("trend", "RANGE")).upper()
+    footprint_signal = str(getattr(footprint, "signal", "NONE")).upper()
+    ten_bar_signal = str(getattr(footprint, "ten_bar_signal", "NONE")).upper()
+    pressure = str(getattr(perpetual_consensus, "order_flow_decision", "WAIT")).upper()
+    pressure_bias = str(getattr(perpetual_consensus, "pressure_bias", "WAIT")).upper()
+    breakout = str((mother_breakout or {}).get("signal", "NONE")).upper()
+    checks = {
+        "Probability is bearish": float(probability_up) < .50,
+        "Macro regime is not bullish": str(macro_regime).upper() != "BULLISH",
+        "Short-term trend is down": trend == "DOWNTREND",
+        "Latest footprint is not buying": footprint_signal != "BUY",
+        "10-candle footprint is not buying": ten_bar_signal != "BUY",
+        "Confirmed market pressure is not BUY": pressure != "BUY",
+        "Early pressure bias is not BUY": pressure_bias != "BUY",
+        "Mother-candle structure is not BUY": breakout != "BUY",
+        "Final validation does not contradict SELL": str(validated_action).upper() != "BUY",
+    }
+    passed = int(sum(bool(v) for v in checks.values()))
+    total = len(checks)
+    validated = str(validated_action).upper() == "SELL"
+    status = "VALIDATED SELL" if validated else (
+        "SELL WATCH" if passed >= max(6, total - 3) else "NOT READY")
+    return {"status": status, "passed": passed, "total": total, "checks": checks}
+
+
+def assumption_signal(directional_score, candidate="NO EDGE", reversal=None,
+                      elliott=None, event_lock=False, shock_active=False,
+                      validated_action="NO EDGE", technical_snapshot=None,
+                      spot=None):
+    """Build a transparent 13-input directional assumption without bypassing gates."""
+    reversal = reversal or {}
+    technical_snapshot = technical_snapshot or {}
+    candidate = str(candidate).upper()
+    validated_action = str(validated_action).upper()
+
+    def signed(side):
+        side = str(side).upper()
+        return 1.0 if side.startswith("BUY") else -1.0 if side.startswith("SELL") else 0.0
+
+    probability = float(getattr(elliott, "probability_up", .5)) if elliott is not None else .5
+    elliott_bias = str(getattr(elliott, "current_bias", "NEUTRAL")) if elliott is not None else "NEUTRAL"
+    rev_signal = float(np.sign(reversal.get("current_signal", 0)))
+    # technical_snapshot varies by model version; only consume numeric/directional
+    # fields that are actually present, and otherwise remain neutral.
+    def tech_value(*names):
+        for name in names:
+            value = technical_snapshot.get(name)
+            if isinstance(value, (int, float, np.number)) and np.isfinite(value):
+                return float(np.clip(value, -1, 1))
+            if isinstance(value, str):
+                v = signed(value)
+                if v:
+                    return v
+        return 0.0
+
+    components = {
+        "All-source directional score": float(np.clip(directional_score, -1, 1)),
+        "Timing candidate": signed(candidate),
+        "Elliott probability": float(np.clip((probability - .5) / .18, -1, 1)),
+        "Elliott structure": signed(elliott_bias),
+        "5-minute reversal": rev_signal,
+        "Technical trend": tech_value("trend", "technical_trend", "signal"),
+        "Momentum": tech_value("momentum", "momentum_score", "rsi_signal"),
+        "Moving-average structure": tech_value("moving_average", "ma_signal", "ema_signal"),
+        "MACD": tech_value("macd", "macd_signal"),
+        "RSI": tech_value("rsi_bias", "rsi_direction"),
+        "Final validated action": signed(validated_action),
+        "Event gate": 0.0 if event_lock else signed(candidate),
+        "Shock gate": 0.0 if shock_active else signed(candidate),
+    }
+    # Equal weights make the displayed 13-point synthesis auditable and prevent
+    # absent optional technical fields from being silently over-weighted.
+    weights = {name: 1.0 / len(components) for name in components}
+    score = float(sum(components[name] * weights[name] for name in components))
+    signal = "BUY" if score >= 0 else "SELL"
+    validated = (
+        not event_lock and not shock_active and
+        validated_action in {"BUY", "SELL"} and validated_action == signal)
+    return {
+        "signal": signal,
+        "status": "VALIDATED" if validated else "ASSUMPTION ONLY",
+        "score": score,
+        "components": components,
+        "weights": weights,
+        "spot": float(spot) if spot is not None and np.isfinite(spot) else np.nan,
+    }
 
 def non_overlapping_evaluation(result, threshold, cost_bps):
     sample = result.predictions.iloc[::INTRADAY_HORIZON_BARS].copy()
