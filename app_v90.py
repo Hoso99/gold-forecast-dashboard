@@ -8,6 +8,7 @@ from event_chart_v90 import (
     combine_chart_events, event_price_chart, manual_event_frame)
 from free_gold_perpetuals_v90 import (
     collect_free_perpetual_consensus, display_frame as perpetual_display_frame)
+from footprint_features_v93 import analyze_footprint
 from gold_model import price_interval, technical_snapshot
 from gold_model_v82 import (
     apply_elliott_overlay,
@@ -16,13 +17,16 @@ from gold_model_v82 import (
 from gold_model_v90 import (
     INTRADAY_HORIZON_BARS, INTRADAY_HORIZON_LABEL, INTRADAY_INTERVAL,
     MODEL_VERSION_V90, audit_five_minute_reversals,
-    calculated_risk_plan, combined_directional_lean, decide_v90, download_five_minute_gold,
-    fit_v90_system, mother_candle_breakout, short_term_technical_trend)
+    assumption_signal, calculated_risk_plan, combined_directional_lean,
+    decide_v90, download_five_minute_gold,
+    fit_v90_system, mother_candle_breakout, sell_setup_assessment,
+    scenario_price_levels, short_term_technical_trend)
 from institutional_features_v830 import catalyst_playbook
 from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, parse_slow_factor_csv
 from official_event_calendar_v830 import (
     download_official_events, event_risk_notice, format_events_gmt,
     official_event_risk)
+from telegram_alerts_v93 import build_telegram_alert, send_telegram_alert
 
 st.set_page_config(page_title="Gold Version 9.3", page_icon="🟡", layout="wide")
 st.title("Gold Version 9.3")
@@ -48,6 +52,12 @@ with st.sidebar:
     notional_multiple = st.slider(
         "Maximum notional exposure (× equity)",
         min_value=.50, max_value=2.00, value=1.50, step=.25)
+    stop_atr_multiple = st.slider(
+        "Stop-loss distance (ATR multiple)",
+        min_value=1.00, max_value=2.50, value=1.50, step=.25)
+    target_r_multiple = st.slider(
+        "Take-profit reward:risk", min_value=1.00, max_value=3.00,
+        value=1.50, step=.25)
     realised_pnl = st.number_input(
         "Today's realised P/L (USD)", value=0.0, step=10.0,
         help="The selected daily realised-loss limit activates the lockout.")
@@ -72,7 +82,12 @@ with st.sidebar:
         "Optional official positioning CSV", type=["csv"],
         help=("Release-timestamped CFTC managed-money, central-bank demand or "
               "geopolitical-risk data. Future-dated observations are never used."))
+    footprint_file = st.file_uploader(
+        "Optional 15-minute footprint trades CSV", type=["csv"],
+        help=("Requires timestamp, venue, symbol, price, size and aggressor_side. "
+              "Local runs automatically use gold_footprint.sqlite when present."))
     run = st.button("Run Version 9.3", type="primary", width="stretch")
+    test_telegram = st.button("Send Telegram test", width="stretch")
 
 with st.expander("Investing.com three-star economic calendar", expanded=False):
     calendar_url = (
@@ -105,6 +120,27 @@ automatic_event_lock, nearby_official_events = official_event_risk(
 @st.cache_data(ttl=15, show_spinner=False)
 def free_perpetual_audit():
     return collect_free_perpetual_consensus()
+
+try:
+    telegram_token = str(st.secrets.get("TELEGRAM_BOT_TOKEN", ""))
+    telegram_chat_id = str(st.secrets.get("TELEGRAM_CHAT_ID", ""))
+except FileNotFoundError:
+    telegram_token = telegram_chat_id = ""
+telegram_token = telegram_token or os.getenv("TELEGRAM_BOT_TOKEN", "")
+telegram_chat_id = telegram_chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
+
+if test_telegram:
+    telegram_test_delivery = send_telegram_alert(
+        telegram_token, telegram_chat_id,
+        "Gold Version 9.3 Telegram test successful.\n"
+        "Notification delivery is configured. No forecast or order was created.")
+    if telegram_test_delivery.status == "SENT":
+        st.success("Telegram test delivered. Check your bot conversation.")
+    else:
+        st.error(
+            f"Telegram test {telegram_test_delivery.status.lower()}: "
+            f"{telegram_test_delivery.detail}")
+
 if not run:
     st.info("Run after a completed 15-minute candle. Version 8.2.5 remains unchanged on port 8502.")
     st.stop()
@@ -141,7 +177,12 @@ try:
                 "detail": str(reversal_error),
             }
         short_trend = short_term_technical_trend(gold)
+        technical = technical_snapshot(gold)
         mother_breakout = mother_candle_breakout(gold)
+        footprint_source = footprint_file
+        if footprint_source is None and os.path.exists("gold_footprint.sqlite"):
+            footprint_source = "gold_footprint.sqlite"
+        footprint = analyze_footprint(footprint_source)
         decision = decide_v90(
             result, macro, elliott, threshold, cost_bps,
             major_event=(major_event or automatic_event_lock),
@@ -151,7 +192,7 @@ try:
             result, macro, short_trend, perpetual_consensus,
             institutional=result.institutional_audit,
             event_lock=(major_event or automatic_event_lock),
-            mother_breakout=mother_breakout)
+            mother_breakout=mother_breakout, footprint=footprint)
         directional["actionable"] = (
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
@@ -161,7 +202,100 @@ try:
             realised_pnl=realised_pnl,
             daily_loss_fraction=daily_loss_percent / 100,
             cost_bps=cost_bps, ounces_per_lot=ounces_per_lot,
-            max_notional_fraction=notional_multiple)
+            max_notional_fraction=notional_multiple,
+            atr_multiple=stop_atr_multiple,
+            reward_risk=target_r_multiple)
+        sell_setup = sell_setup_assessment(
+            elliott.probability_up, decision.macro_regime, short_trend,
+            footprint=footprint, perpetual_consensus=perpetual_consensus,
+            mother_breakout=mother_breakout,
+            validated_action=decision.action)
+        assumption = assumption_signal(
+            directional["score"], candidate=decision.candidate,
+            reversal=reversal_5m, elliott=elliott,
+            event_lock=(major_event or automatic_event_lock),
+            shock_active=getattr(result, "shock_audit", {}).get("active", False),
+            validated_action=decision.action,
+            technical_snapshot=technical, spot=result.spot)
+        assumption_levels = scenario_price_levels(
+            assumption["signal"], gold, cost_bps=cost_bps,
+            atr_multiple=stop_atr_multiple,
+            reward_risk=target_r_multiple)
+
+        # Give every directional output the same transparent scenario levels.
+        # Only the final risk-controlled action may be labelled ACTIVE; levels
+        # attached to all other indications are preparation scenarios only.
+        reversal_side = (
+            "BUY" if reversal_5m.get("current_signal", 0) > 0 else
+            "SELL" if reversal_5m.get("current_signal", 0) < 0 else "NONE")
+        signal_sources = [
+            ("13-point synthesis", assumption["signal"], assumption["status"]),
+            ("Every-run directional indication", directional["indication"],
+             "CONFIRMED" if directional["actionable"] else "INDICATION ONLY"),
+            ("Priority market pressure", directional["pressure_indication"],
+             "CONFIRMED" if directional["pressure_priority"] else "EARLY BIAS"),
+            ("Seven-venue pressure", perpetual_consensus.order_flow_decision,
+             perpetual_consensus.confidence),
+            ("Latest footprint", footprint.signal, footprint.status),
+            ("10-candle footprint pressure", footprint.ten_bar_signal,
+             "HISTORICAL PRESSURE"),
+            ("Mother-candle breakout", mother_breakout["signal"],
+             "CLOSE CONFIRMED" if mother_breakout.get("close_confirmed") else
+             mother_breakout.get("state", "WATCH")),
+            ("5-minute reversal", reversal_side,
+             reversal_5m.get("status", "UNAVAILABLE")),
+            ("Risk-controlled action", decision.action,
+             risk_plan["status"]),
+        ]
+        signal_level_rows = []
+        for source, side, status in signal_sources:
+            side = str(side).upper()
+            if side not in {"BUY", "SELL"}:
+                continue
+            if source == "Risk-controlled action" and risk_plan["status"] == "ACTIVE":
+                levels = {
+                    "entry": float(gold.close.iloc[-1]),
+                    "stop": risk_plan["stop_price"],
+                    "target": risk_plan["target_price"],
+                }
+                level_type = "VALIDATED RISK PLAN"
+            else:
+                levels = scenario_price_levels(
+                    side, gold, cost_bps=cost_bps,
+                    atr_multiple=stop_atr_multiple,
+                    reward_risk=target_r_multiple)
+                level_type = "SCENARIO ONLY"
+            signal_level_rows.append({
+                "Signal source": source, "Direction": side,
+                "Status": status, "Entry": levels["entry"],
+                "Stop loss": levels["stop"],
+                "Take profit": levels["target"],
+                "Reward:risk": float(target_r_multiple),
+                "Level type": level_type,
+            })
+        alert_levels = (
+            {"entry": float(gold.close.iloc[-1]),
+             "stop": risk_plan["stop_price"],
+             "target": risk_plan["target_price"]}
+            if risk_plan["status"] == "ACTIVE" else assumption_levels)
+        telegram_message = build_telegram_alert(
+            as_of=result.as_of,
+            expiry=result.as_of + pd.Timedelta(minutes=30),
+            assumption=assumption["signal"],
+            assumption_status=assumption["status"],
+            validated_action=decision.action,
+            entry=alert_levels["entry"], stop_loss=alert_levels["stop"],
+            take_profit=alert_levels["target"],
+            reward_risk=target_r_multiple,
+            pressure=directional["pressure_indication"],
+            pressure_agreement=(
+                f"{perpetual_consensus.agreement}/"
+                f"{perpetual_consensus.live_venues} live venues"),
+            event_lock=(major_event or automatic_event_lock),
+            risk_status=risk_plan["status"],
+            confidence=directional["confidence"])
+        telegram_delivery = send_telegram_alert(
+            telegram_token, telegram_chat_id, telegram_message)
 except Exception as exc:
     st.error(f"Version 9.3 could not run: {exc}")
     st.stop()
@@ -212,7 +346,7 @@ with events_tab:
         "Red dashed = official BLS, BEA or Federal Reserve event. All times are GMT/UTC.")
     
 with pressure_tab:
-    st.subheader("Six-venue gold market-pressure consensus")
+    st.subheader("Seven-venue gold market-pressure consensus")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Feed status", perpetual_consensus.status)
     p2.metric("Live venues", f"{perpetual_consensus.live_venues}/7")
@@ -250,6 +384,52 @@ with pressure_tab:
         "at least three agreeing venues with aligned aggressive flow plus "
         "ultra-conservative final-action gates; this "
         "cannot reveal hidden orders or guarantee the next move.")
+
+    st.subheader("Local synthetic footprint")
+    f1, f2, f3, f4, f5 = st.columns(5)
+    f1.metric("Footprint status", footprint.status)
+    f2.metric("Footprint direction", footprint.signal)
+    f3.metric("Delta", f"{footprint.delta:+,.2f}")
+    f4.metric("Delta percentage", f"{footprint.delta_pct:+.1%}")
+    f5.metric("Confirming venues", f"{footprint.confirming_venues}/{footprint.live_venues}")
+    f6, f7, f8, f9 = st.columns(4)
+    f6.metric("Aggressive buy volume", f"{footprint.buy_volume:,.2f}")
+    f7.metric("Aggressive sell volume", f"{footprint.sell_volume:,.2f}")
+    f8.metric("Buy-imbalance levels", footprint.stacked_buy_levels)
+    f9.metric("Sell-imbalance levels", footprint.stacked_sell_levels)
+    st.info(footprint.detail)
+    if isinstance(footprint.venue_summary, pd.DataFrame):
+        st.dataframe(
+            footprint.venue_summary, hide_index=True, width="stretch",
+            column_config={
+                "delta_pct": st.column_config.NumberColumn(format="%+.1%%")})
+    st.caption(
+        "This footprint uses executed trades from exchange-specific gold "
+        "instruments. It is not COMEX GC footprint data.")
+    st.subheader("Last 10 completed 15-minute footprint candles")
+    h1, h2, h3, h4, h5 = st.columns(5)
+    h1.metric("10-candle pressure", footprint.ten_bar_signal)
+    h2.metric("Total buy volume", f"{footprint.ten_bar_buy_volume:,.2f}")
+    h3.metric("Total sell volume", f"{footprint.ten_bar_sell_volume:,.2f}")
+    h4.metric("Total delta", f"{footprint.ten_bar_delta:+,.2f}")
+    h5.metric("Raw delta percentage", f"{footprint.ten_bar_delta_pct:+.1%}")
+    if isinstance(footprint.candle_summary, pd.DataFrame) and not footprint.candle_summary.empty:
+        st.dataframe(
+            footprint.candle_summary, hide_index=True, width="stretch",
+            column_config={
+                "candle": st.column_config.DatetimeColumn("Candle start (UTC)"),
+                "buy_volume": st.column_config.NumberColumn(format="%.2f"),
+                "sell_volume": st.column_config.NumberColumn(format="%.2f"),
+                "delta": st.column_config.NumberColumn(format="%+.2f"),
+                "delta_pct": st.column_config.NumberColumn(format="%+.1%%"),
+                "normalized_delta": st.column_config.NumberColumn(format="%+.1%%"),
+            })
+    else:
+        st.info("No completed footprint candles have been collected yet.")
+    st.caption(
+        "Raw totals combine venue-specific contract units and are shown for audit. "
+        "The BUY/SELL pressure signal uses the median normalized venue delta so a "
+        "large-unit venue cannot dominate the decision.")
     
     st.subheader("Institutional liquidity and accumulation audit")
     institutional = result.institutional_audit
@@ -288,6 +468,53 @@ with decision_tab:
     lower, median, upper = price_interval(result)
     forecast_time = result.as_of + pd.Timedelta(minutes=30)
     st.subheader("Version 9.3 decision")
+    if telegram_delivery.status == "SENT":
+        st.success("Telegram alert delivered for this run.")
+    elif telegram_delivery.status == "FAILED":
+        st.warning(f"Telegram alert failed: {telegram_delivery.detail}")
+    else:
+        st.info(
+            "Telegram alerts are not configured. Add TELEGRAM_BOT_TOKEN and "
+            "TELEGRAM_CHAT_ID to Streamlit Secrets.")
+    st.subheader("13-point assumption signal")
+    a1, a2, a3, a4, a5 = st.columns(5)
+    a1.metric("Assumption", assumption["signal"])
+    a2.metric("Release status", assumption["status"])
+    a3.metric("Reference entry", f'USD {assumption_levels["entry"]:,.2f}')
+    a4.metric("Scenario stop loss", f'USD {assumption_levels["stop"]:,.2f}')
+    a5.metric("Scenario take profit", f'USD {assumption_levels["target"]:,.2f}')
+    if assumption["status"] == "VALIDATED":
+        st.success(
+            f'VALIDATED {assumption["signal"]}: final release gates agree with '
+            'the 13-point assumption. Use only the calculated-risk position size.')
+    else:
+        st.warning(
+            f'{assumption["signal"]} ASSUMPTION ONLY: stop and target are '
+            'illustrative. Final release gates did not validate a trade, so '
+            'calculated position size remains zero.')
+    st.subheader("Signal trade levels")
+    st.dataframe(
+        pd.DataFrame(signal_level_rows), hide_index=True, width="stretch",
+        column_config={
+            "Entry": st.column_config.NumberColumn("Entry (USD)", format="%.2f"),
+            "Stop loss": st.column_config.NumberColumn("Stop loss (USD)", format="%.2f"),
+            "Take profit": st.column_config.NumberColumn("Take profit (USD)", format="%.2f"),
+            "Reward:risk": st.column_config.NumberColumn(format="%.2f:1"),
+        })
+    st.caption(
+        "Every BUY/SELL indication now has an entry reference, stop loss and "
+        "take profit. Only a row marked VALIDATED RISK PLAN is position-sized; "
+        "SCENARIO ONLY rows are alerts and must not be treated as released trades. "
+        "Stops can slip during gaps or high-impact events.")
+    st.dataframe(pd.DataFrame([
+        {"Assumption input": name,
+         "Direction": "BUY" if value > 0 else "SELL" if value < 0 else "NEUTRAL",
+         "Score": value, "Weight": assumption["weights"][name]}
+        for name, value in assumption["components"].items()
+    ]), hide_index=True, width="stretch",
+       column_config={
+           "Score": st.column_config.NumberColumn(format="%+.2f"),
+           "Weight": st.column_config.NumberColumn(format="%.0%%")})
     if directional["indication"] == "BUY":
         st.success(
             f'EVERY-RUN DIRECTIONAL INDICATION: BUY · '
@@ -378,6 +605,13 @@ with decision_tab:
     r4.metric("Estimated broker size", f'{risk_plan["estimated_lots"]:.4f} lots')
     r5.metric("Planned reward:risk", (
         f'{risk_plan["reward_risk"]:.1f}:1' if risk_plan["status"] == "ACTIVE" else "N/A"))
+    levels1, levels2 = st.columns(2)
+    levels1.metric("Stop loss", (
+        f'USD {risk_plan["stop_price"]:,.2f}'
+        if risk_plan["status"] == "ACTIVE" else "N/A"))
+    levels2.metric("Take profit", (
+        f'USD {risk_plan["target_price"]:,.2f}'
+        if risk_plan["status"] == "ACTIVE" else "N/A"))
     if risk_plan["status"] == "ACTIVE":
         st.warning(
             f'Illustrative stop: USD {risk_plan["stop_price"]:,.2f} · '
@@ -387,6 +621,17 @@ with decision_tab:
             'gaps and slippage can cause a larger loss.')
     else:
         st.info(f'Position size is zero: {risk_plan["reason"]}.')
+    st.subheader("Evidence-based SELL readiness")
+    st.metric("SELL status", sell_setup["status"],
+              f'{sell_setup["passed"]}/{sell_setup["total"]} bearish checks')
+    st.dataframe(pd.DataFrame([
+        {"Bearish requirement": name, "Passed": "YES" if passed else "NO"}
+        for name, passed in sell_setup["checks"].items()
+    ]), hide_index=True, width="stretch")
+    if sell_setup["status"] == "SELL WATCH":
+        st.warning(
+            "Bearish evidence deserves priority monitoring, but the final release "
+            "gate has not validated a SELL. Position size remains zero.")
     st.subheader("Validated 5-minute early-reversal warning")
     active_side = (
         reversal_5m.get("buy", {}) if reversal_5m["current_signal"] > 0 else
@@ -611,7 +856,6 @@ with ledger_tab:
                        "gold_v90_forecast_ledger.csv", "text/csv")
     
     st.subheader("Technical indicators and previous-session pivots")
-    technical = technical_snapshot(gold)
     st.dataframe(pd.DataFrame([{"Measure": key, "Value": value} for key, value in technical.items()]),
                  hide_index=True, width="stretch")
     
