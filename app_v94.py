@@ -324,7 +324,7 @@ try:
              "stop": risk_plan["stop_price"],
              "target": risk_plan["target_price"]}
             if risk_plan["status"] == "ACTIVE" else assumption_levels)
-          final_signal = four_module.signal
+        final_signal = four_module.signal
     release_status = (
         "VALIDATED RISK PLAN"
         if risk_plan["status"] == "ACTIVE"
