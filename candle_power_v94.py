@@ -83,10 +83,17 @@ def analyze_last_10_candles(gold, footprint=None, bars=10,
     sell_power = float(1 - buy_power)
     buy_advantage = buy_power - sell_power
     sell_advantage = sell_power - buy_power
-    if sell_power >= sell_threshold and sell_advantage >= sell_lead:
-        signal = "SELL"
-    elif buy_power >= buy_threshold and buy_advantage >= buy_lead:
-        signal = "BUY"
+    pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
+    accel_boost = 0.10 * pressure_acceleration
+    directional_net = _clip(net + accel_boost)
+    directional_buy_power = float((directional_net + 1) / 2)
+    directional_sell_power = float(1 - directional_buy_power)
+    directional_buy_advantage = directional_buy_power - directional_sell_power
+    directional_sell_advantage = directional_sell_power - directional_buy_power                            
+    if directional_sell_power >= sell_threshold and directional_sell_advantage >= sell_lead:
+    signal = "SELL"
+    elif directional_buy_power >= buy_threshold and directional_buy_advantage >= buy_lead:
+    signal = "BUY"
     else:
         signal = "WAIT"
     direction = np.where(raw > .10, "BUY", np.where(raw < -.10, "SELL", "NEUTRAL"))
@@ -105,6 +112,7 @@ def analyze_last_10_candles(gold, footprint=None, bars=10,
     recent_momentum = _clip(raw.iloc[-3:].mean() - raw.iloc[:3].mean())
     # Compare newer five candles with older five. Negative = selling accelerating.
     pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
+                              
     # Affirmative evidence only: neutral candles contribute to neither side.
     bearish_evidence = float(np.average(np.maximum(-raw.to_numpy(), 0), weights=weights))
     bullish_evidence = float(np.average(np.maximum(raw.to_numpy(), 0), weights=weights))
