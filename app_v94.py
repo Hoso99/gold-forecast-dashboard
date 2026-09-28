@@ -31,7 +31,8 @@ from telegram_alerts_v93 import send_telegram_alert
 from structure_risk_v94 import structure_atr_plan, size_from_structure
 from candle_power_v94 import analyze_last_10_candles, validate_power_signal
 from four_module_v94 import evaluate_four_modules
-from validation_v94 import indicator_divergence, untouched_holdout_report
+from validation_v94 import (
+    blocked_signal_audit, indicator_divergence, untouched_holdout_report)
 from risk_controls_v94 import adaptive_risk_fraction
 
 st.set_page_config(page_title="Gold Version 9.4", page_icon="🟡", layout="wide")
@@ -259,6 +260,9 @@ try:
             validated_action=decision.action,
             technical_snapshot=technical, spot=result.spot)
         holdout_v94 = untouched_holdout_report(gold, cost_bps=cost_bps)
+        blocked_audit_v94 = blocked_signal_audit(
+            gold, cost_bps=cost_bps, atr_multiple=stop_atr_multiple,
+            min_rr=target_r_multiple, swing_lookback=swing_lookback)
         assumption_levels = ({
             "entry": structure_plan["entry"], "stop": structure_plan["stop"],
             "target": structure_plan["tp1"]
@@ -771,6 +775,40 @@ with decision_tab:
     h3.metric("Accuracy after costs", f"{holdout_v94['accuracy']:.1%}" if pd.notna(holdout_v94["accuracy"]) else "N/A")
     h4.metric("Profit factor", f"{holdout_v94['profit_factor']:.2f}" if pd.notna(holdout_v94["profit_factor"]) else "N/A")
     st.caption("This final chronological block is not used to tune the displayed rules. Treat it as evidence, not a guarantee; forward paper trading is still required.")
+    st.subheader("Blocked Signal Audit")
+    st.caption(
+        "Counterfactual audit of BUY/SELL candidates that safety gates would block on the "
+        "chronological holdout. A missed good signal is not automatically evidence that a gate "
+        "should be removed: several gates can block the same candidate. The Exclusive columns "
+        "show the cleaner cases where one gate was the only blocker.")
+    ba1, ba2 = st.columns(2)
+    ba1.metric("Audit status", blocked_audit_v94["status"])
+    ba2.metric("Directional candidates audited", blocked_audit_v94["candidates"])
+    if not blocked_audit_v94["summary"].empty:
+        st.dataframe(
+            blocked_audit_v94["summary"], hide_index=True, width="stretch",
+            column_config={
+                "Good-signal rate": st.column_config.NumberColumn(format="%.1%%"),
+                "Mean candidate net (bps)": st.column_config.NumberColumn(format="%+.1f"),
+                "Exclusive net effect if removed (bps)": st.column_config.NumberColumn(format="%+.1f"),
+            })
+        st.caption(
+            "Interpretation: positive exclusive net effect means the candidates blocked only by "
+            "that gate had positive aggregate 30-minute net return after configured costs. "
+            "This is diagnostic evidence, not a rule-change instruction.")
+    st.markdown("**Historical audit coverage**")
+    st.dataframe(blocked_audit_v94["coverage"], hide_index=True, width="stretch")
+    if not blocked_audit_v94["details"].empty:
+        with st.expander("Show blocked-signal cases"):
+            audit_cases = blocked_audit_v94["details"].copy()
+            audit_cases["Blockers"] = audit_cases["Blockers"].apply(lambda x: "; ".join(x) if x else "NONE")
+            st.dataframe(
+                audit_cases.head(250), hide_index=True, width="stretch",
+                column_config={
+                    "Buy power": st.column_config.NumberColumn(format="%.1%%"),
+                    "Sell power": st.column_config.NumberColumn(format="%.1%%"),
+                    "30m net (bps)": st.column_config.NumberColumn(format="%+.1f"),
+                })
     st.subheader("Evidence-based SELL readiness")
     st.metric("SELL status", sell_setup["status"],
               f'{sell_setup["passed"]}/{sell_setup["total"]} bearish checks')
