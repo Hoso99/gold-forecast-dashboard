@@ -214,6 +214,8 @@ try:
             reversal_signal=reversal_5m.get("current_signal", 0),
             validated_action=decision.action)
         divergence_v94 = indicator_divergence(gold)
+        early_sell_v94 = detect_early_sell(gold)
+        early_sell_audit_v94 = early_sell_holdout(gold, cost_bps=cost_bps)
         four_module = evaluate_four_modules(
             power_v94, mother_breakout=mother_breakout, short_trend=short_trend,
             reversal=reversal_5m, divergence=divergence_v94,
@@ -277,6 +279,7 @@ try:
             "BUY" if reversal_5m.get("current_signal", 0) > 0 else
             "SELL" if reversal_5m.get("current_signal", 0) < 0 else "NONE")
         signal_sources = [
+            ("Early SELL detection", early_sell_v94.signal, early_sell_v94.status),
             ("V9.4 four-module signal", four_module.signal, four_module.status),
             ("V9.4 10-candle power", power_v94.signal, power_release["status"]),
             ("Legacy 13-point synthesis", assumption["signal"], assumption["status"]),
@@ -335,6 +338,9 @@ try:
         if power_v94.signal in {"BUY", "SELL"}:
             directional_signal_v94 = power_v94.signal
             directional_basis_v94 = "10-candle power threshold"
+        elif early_sell_v94.signal == "SELL":
+            directional_signal_v94 = "SELL"
+            directional_basis_v94 = f"early SELL acceleration ({early_sell_v94.score:.2f})"
         elif four_module.score >= 0.05:
             directional_signal_v94 = "BUY"
             directional_basis_v94 = "four-module directional lean"
@@ -565,6 +571,23 @@ with decision_tab:
 
     st.subheader("Four-module evidence")
     fm1, fm2, fm3, fm4 = st.columns(4)
+    st.subheader("Early SELL detection")
+    es1, es2, es3 = st.columns(3)
+    es1.metric("Early SELL signal", early_sell_v94.signal)
+    es2.metric("Early SELL score", f"{early_sell_v94.score:.2f}")
+    es3.metric("Bearish acceleration checks", f"{early_sell_v94.checks_passed}/{early_sell_v94.checks_total}")
+    st.caption(early_sell_v94.detail)
+    if early_sell_v94.signal == "SELL":
+        st.warning("EARLY SELL directional warning — execution still requires the normal safety/risk gates.")
+    with st.expander("Early SELL components"):
+        st.dataframe(pd.DataFrame([{"Component": k, "Score": v} for k,v in early_sell_v94.components.items()]), hide_index=True, width="stretch")
+    ea1, ea2, ea3, ea4 = st.columns(4)
+    ea1.metric("Historical early-SELL cases", early_sell_audit_v94["signals"])
+    ea2.metric("30m accuracy after costs", "N/A" if not np.isfinite(early_sell_audit_v94["accuracy"]) else f'{early_sell_audit_v94["accuracy"]:.1%}')
+    ea3.metric("Mean net", "N/A" if not np.isfinite(early_sell_audit_v94["mean_net_bps"]) else f'{early_sell_audit_v94["mean_net_bps"]:+.1f} bps')
+    ea4.metric("Profit factor", "N/A" if not np.isfinite(early_sell_audit_v94["profit_factor"]) else f'{early_sell_audit_v94["profit_factor"]:.2f}')
+    st.caption("Fixed-rule chronological diagnostic. This does not authorize execution or bypass safety gates.")
+
     fm1.metric("Qualified module signal", four_module.signal)
     fm2.metric("Four-module score", f"{four_module.score:+.3f}")
     fm3.metric("Buying strength", f"{four_module.buy_strength:.1%}")
