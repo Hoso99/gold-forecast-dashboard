@@ -34,7 +34,7 @@ from four_module_v94 import evaluate_four_modules
 from validation_v94 import (
     blocked_signal_audit, indicator_divergence, untouched_holdout_report)
 from risk_controls_v94 import adaptive_risk_fraction
-from early_sell_v94 import detect_early_sell
+from early_sell_v94 import detect_early_sell, early_sell_holdout
 st.set_page_config(page_title="Gold Version 9.4", page_icon="🟡", layout="wide")
 st.title("Gold Version 9.4 — 10-Candle Power")
 st.caption("Four-module · last-10-candle power first · SELL-sensitive · 30-minute research signal")
