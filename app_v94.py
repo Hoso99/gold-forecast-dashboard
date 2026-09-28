@@ -328,7 +328,24 @@ try:
              "stop": risk_plan["stop_price"],
              "target": risk_plan["target_price"]}
             if risk_plan["status"] == "ACTIVE" else assumption_levels)
-        final_signal = four_module.signal
+
+        # Keep directional information separate from execution safety.  The
+        # directional signal may be BUY/SELL while the trade remains BLOCKED.
+        # This does not bypass any event, shock, structure, R:R or risk gate.
+        if power_v94.signal in {"BUY", "SELL"}:
+            directional_signal_v94 = power_v94.signal
+            directional_basis_v94 = "10-candle power threshold"
+        elif four_module.score >= 0.05:
+            directional_signal_v94 = "BUY"
+            directional_basis_v94 = "four-module directional lean"
+        elif four_module.score <= -0.05:
+            directional_signal_v94 = "SELL"
+            directional_basis_v94 = "four-module directional lean"
+        else:
+            directional_signal_v94 = "WAIT"
+            directional_basis_v94 = "mixed / insufficient directional evidence"
+
+        final_signal = directional_signal_v94
     release_status = (
         "VALIDATED RISK PLAN"
         if risk_plan["status"] == "ACTIVE"
@@ -343,8 +360,9 @@ try:
     reward_text = f"{target_r_multiple:.2f}:1" if risk_plan["status"] == "ACTIVE" else "N/A"
     telegram_message = (
         "Gold Version 9.4 — 10-Candle Power\n"
-        f"FINAL SIGNAL: {final_signal}\n"
-        f"Release status: {release_status}\n"
+        f"DIRECTIONAL SIGNAL: {final_signal}\n"
+        f"Directional basis: {directional_basis_v94}\n"
+        f"TRADE STATUS: {release_status}\n"
         f"Model time: {result.as_of:%Y-%m-%d %H:%M} UTC\n"
         f"Signal expiry: {(result.as_of + pd.Timedelta(minutes=30)):%Y-%m-%d %H:%M} UTC\n"
         f"10-candle buying power: {power_v94.buy_power * 100:.1f}%\n"
@@ -530,9 +548,24 @@ with pressure_tab:
 with decision_tab:
     lower, median, upper = price_interval(result)
     forecast_time = result.as_of + pd.Timedelta(minutes=30)
-    st.subheader("Version 9.4 four-module decision")
+    st.subheader("Version 9.4 directional signal + safety release")
+    ds1, ds2, ds3 = st.columns(3)
+    ds1.metric("Directional signal", directional_signal_v94)
+    ds2.metric("Trade status", "VALIDATED" if risk_plan["status"] == "ACTIVE" else "BLOCKED")
+    ds3.metric("Risk plan", risk_plan["status"])
+    if risk_plan["status"] == "ACTIVE":
+        st.success(f"{directional_signal_v94} direction has a VALIDATED RISK PLAN. Safety gates passed.")
+    elif directional_signal_v94 in {"BUY", "SELL"}:
+        st.warning(
+            f"DIRECTION {directional_signal_v94} · {directional_basis_v94}. "
+            "TRADE BLOCKED — this directional indication does not override the safety gates."
+        )
+    else:
+        st.info("DIRECTION WAIT — evidence is still mixed. No trade is released.")
+
+    st.subheader("Four-module evidence")
     fm1, fm2, fm3, fm4 = st.columns(4)
-    fm1.metric("Final signal", four_module.signal)
+    fm1.metric("Qualified module signal", four_module.signal)
     fm2.metric("Four-module score", f"{four_module.score:+.3f}")
     fm3.metric("Buying strength", f"{four_module.buy_strength:.1%}")
     fm4.metric("Selling strength", f"{four_module.sell_strength:.1%}")
