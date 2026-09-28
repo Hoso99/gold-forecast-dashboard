@@ -46,6 +46,7 @@ class PerpetualConsensus:
     selling_power: float = 0.5
     order_flow_decision: str = "WAIT"
     pressure_bias: str = "WAIT"
+    market_lean: str = "WAIT"
 
 
 def _get(url: str, timeout: float = 3.5) -> Any:
@@ -341,9 +342,12 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     pressure_bias = "WAIT"
     if len(live) >= 3 and abs(pressure) >= .10:
         pressure_bias = "BUY" if pressure > 0 else "SELL"
+        market_lean = "WAIT"
+        if len(live) >= 3 and abs(pressure) >= .05:
+        market_lean = "BUY" if pressure > 0 else "SELL"
     return PerpetualConsensus(
         status, direction, agreement, len(live), confidence, venues,
-        pressure, buying, selling, order_flow_decision, pressure_bias)
+        pressure, buying, selling, order_flow_decision, pressure_bias, market_lean)
 
 
 def display_frame(consensus: PerpetualConsensus) -> pd.DataFrame:
