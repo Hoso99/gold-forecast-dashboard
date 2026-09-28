@@ -91,9 +91,9 @@ def analyze_last_10_candles(gold, footprint=None, bars=10,
     directional_buy_advantage = directional_buy_power - directional_sell_power
     directional_sell_advantage = directional_sell_power - directional_buy_power                            
     if directional_sell_power >= sell_threshold and directional_sell_advantage >= sell_lead:
-    signal = "SELL"
+        signal = "SELL"
     elif directional_buy_power >= buy_threshold and directional_buy_advantage >= buy_lead:
-    signal = "BUY"
+        signal = "BUY"
     else:
         signal = "WAIT"
     direction = np.where(raw > .10, "BUY", np.where(raw < -.10, "SELL", "NEUTRAL"))
