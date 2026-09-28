@@ -166,11 +166,18 @@ if not key:
     st.error("Missing TWELVE_DATA_API_KEY in Streamlit secrets.")
     st.stop()
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_fit_v90(gold, confirmations, splits, cost_bps, threshold):
+     return fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_early_sell_holdout(gold, cost_bps):
+    return early_sell_holdout(gold, cost_bps=cost_bps)
 try:
     with st.spinner("Running Version 9.4 10-candle power research…"):
         gold, confirmations, source_status = download_intraday_bundle(key)
         validate_market_data(gold, confirmations)
-        result = fit_v90_system(gold, confirmations, splits, cost_bps, threshold)
+        result = cached_fit_v90(gold, confirmations, splits, cost_bps, threshold)
         fred, macro_audit = download_fred_macro()
         slow = parse_slow_factor_csv(slow_file) if slow_file else None
         macro = combine_macro_sources(fred, slow)
@@ -215,7 +222,7 @@ try:
             validated_action=decision.action)
         divergence_v94 = indicator_divergence(gold)
         early_sell_v94 = detect_early_sell(gold)
-        early_sell_audit_v94 = early_sell_holdout(gold, cost_bps=cost_bps)
+        early_sell_audit_v94 = cached_early_sell_holdout(gold, cost_bps)
         four_module = evaluate_four_modules(
             power_v94, mother_breakout=mother_breakout, short_trend=short_trend,
             reversal=reversal_5m, divergence=divergence_v94,
