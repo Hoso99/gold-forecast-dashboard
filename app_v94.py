@@ -27,7 +27,7 @@ from macro_econometrics_v825 import combine_macro_sources, download_fred_macro, 
 from official_event_calendar_v830 import (
     download_official_events, event_risk_notice, format_events_gmt,
     official_event_risk)
-from telegram_alerts_v93 import build_telegram_alert, send_telegram_alert
+from telegram_alerts_v93 import send_telegram_alert
 from structure_risk_v94 import structure_atr_plan, size_from_structure
 from candle_power_v94 import analyze_last_10_candles, validate_power_signal
 from four_module_v94 import evaluate_four_modules
@@ -324,22 +324,33 @@ try:
              "stop": risk_plan["stop_price"],
              "target": risk_plan["target_price"]}
             if risk_plan["status"] == "ACTIVE" else assumption_levels)
-        telegram_message = build_telegram_alert(
-            as_of=result.as_of,
-            expiry=result.as_of + pd.Timedelta(minutes=30),
-            assumption=power_v94.signal,
-            assumption_status=power_release["status"],
-            validated_action=(four_module.signal if risk_plan["status"] == "ACTIVE" else "WAIT"),
-            entry=alert_levels["entry"], stop_loss=alert_levels["stop"],
-            take_profit=alert_levels["target"],
-            reward_risk=target_r_multiple,
-            pressure=directional["pressure_indication"],
-            pressure_agreement=(
-                f"{perpetual_consensus.agreement}/"
-                f"{perpetual_consensus.live_venues} live venues"),
-            event_lock=(major_event or automatic_event_lock),
-            risk_status=risk_plan["status"],
-            confidence=directional["confidence"])
+          final_signal = four_module.signal
+    release_status = (
+        "VALIDATED RISK PLAN"
+        if risk_plan["status"] == "ACTIVE"
+        else "WAIT / BLOCKED"
+    )
+
+    entry_value = float(gold.close.iloc[-1])
+    stop_value = alert_levels["stop"]
+    target_value = alert_levels["target"]
+
+    telegram_message = (
+        "Gold Version 9.4 — 10-Candle Power\n"
+        f"FINAL SIGNAL: {final_signal}\n"
+        f"Release status: {release_status}\n"
+        f"Model time: {result.as_of:%Y-%m-%d %H:%M} UTC\n"
+        f"Signal expiry: {(result.as_of + pd.Timedelta(minutes=30)):%Y-%m-%d %H:%M} UTC\n"
+        f"10-candle buying power: {power_v94.buying_power:.1f}%\n"
+        f"10-candle selling power: {power_v94.selling_power:.1f}%\n"
+        f"Market pressure: {directional['pressure_indication']}\n"
+        f"Entry reference: USD {entry_value:.2f}\n"
+        f"Stop loss: USD {float(stop_value):.2f}\n"
+        f"Take profit: USD {float(target_value):.2f}\n"
+        f"Reward:risk: {target_r_multiple:.2f}:1\n"
+        f"Risk status: {risk_plan['status']}\n"
+        "Research alert only. No order was submitted."
+    )
         telegram_delivery = send_telegram_alert(
             telegram_token, telegram_chat_id, telegram_message)
 except Exception as exc:
