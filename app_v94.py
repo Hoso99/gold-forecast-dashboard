@@ -345,6 +345,7 @@ try:
         f"Signal expiry: {(result.as_of + pd.Timedelta(minutes=30)):%Y-%m-%d %H:%M} UTC\n"
         f"10-candle buying power: {power_v94.buy_power * 100:.1f}%\n"
         f"10-candle selling power: {power_v94.sell_power * 100:.1f}%\n"
+        f"Entry reference: USD {entry_value:.2f}\n"
         f"Stop loss: {stop_text}\n"
         f"Take profit: {target_text}\n"
         f"Reward:risk: {reward_text}\n"
