@@ -235,7 +235,7 @@ try:
             four_module, max_fraction=risk_percent / 100,
             consecutive_losses=consecutive_losses)
         structure_plan = structure_atr_plan(
-            four_module.signal if adaptive_fraction > 0 else "WAIT", gold,
+            directional_signal_v94 if adaptive_fraction > 0 else "WAIT", gold,
             atr_multiple=stop_atr_multiple, min_tp1_rr=target_r_multiple,
             swing_lookback=swing_lookback, cost_bps=cost_bps)
         daily_locked = (daily_loss_percent <= 0 or realised_pnl <= -(account_equity * daily_loss_percent / 100))
