@@ -1066,6 +1066,13 @@ with validation_tab:
     st.caption("Higher ROC-AUC and lower Brier score are better. Version 8.2.5 is not compared because it predicts a different one-hour target.")
     st.caption("This section uses historical purged walk-forward folds. It is separate from the live settlement results above.")
 
+    st.subheader("Early SELL holdout validation")
+    st.dataframe(
+    pd.DataFrame([early_sell_audit_v94]),
+    hide_index=True,
+    width="stretch",
+)
+
     st.subheader("Selective-signal reliability")
     selective = result.selective_reliability
     q1, q2, q3, q4 = st.columns(4)
