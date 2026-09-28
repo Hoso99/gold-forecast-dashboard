@@ -348,6 +348,9 @@ try:
         elif early_sell_v94.signal == "SELL":
             directional_signal_v94 = "SELL"
             directional_basis_v94 = f"early SELL acceleration ({early_sell_v94.score:.2f})"
+             elif perpetual_consensus.pressure_bias in {"BUY", "SELL"}:
+        directional_signal_v94 = perpetual_consensus.pressure_bias
+        directional_basis_v94 = "seven-venue market-pressure bias"
         elif four_module.score >= 0.05:
             directional_signal_v94 = "BUY"
             directional_basis_v94 = "four-module directional lean"
