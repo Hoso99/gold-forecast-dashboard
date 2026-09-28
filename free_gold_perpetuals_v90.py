@@ -288,6 +288,7 @@ def _collect_slot(preferred: str, fallback: str | None = None) -> VenueAudit:
 
 
 def collect_free_perpetual_consensus() -> PerpetualConsensus:
+    market_lean = "WAIT"
     # Five XAU perpetual venues plus two tokenized-gold spot venues. The latter
     # are explicitly labelled and contribute only observable book/trade flow.
     with ThreadPoolExecutor(max_workers=7) as pool:
