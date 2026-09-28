@@ -343,7 +343,7 @@ def collect_free_perpetual_consensus() -> PerpetualConsensus:
     if len(live) >= 3 and abs(pressure) >= .10:
         pressure_bias = "BUY" if pressure > 0 else "SELL"
         market_lean = "WAIT"
-        if len(live) >= 3 and abs(pressure) >= .05:
+    if len(live) >= 3 and abs(pressure) >= .05:
         market_lean = "BUY" if pressure > 0 else "SELL"
     return PerpetualConsensus(
         status, direction, agreement, len(live), confidence, venues,
