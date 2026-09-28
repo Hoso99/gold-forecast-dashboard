@@ -46,7 +46,7 @@ class PerpetualConsensus:
     selling_power: float = 0.5
     order_flow_decision: str = "WAIT"
     pressure_bias: str = "WAIT"
-    market_lean: str = "WAIT"
+    market_lean: str = "WAIT"  # V9.4 directional market lean
 
 
 def _get(url: str, timeout: float = 3.5) -> Any:
