@@ -334,7 +334,9 @@ try:
     entry_value = float(gold.close.iloc[-1])
     stop_value = alert_levels["stop"]
     target_value = alert_levels["target"]
-
+    stop_text = f"USD {float(stop_value):.2f}" if risk_plan["status"] == "ACTIVE" else "N/A"
+    target_text = f"USD {float(target_value):.2f}" if risk_plan["status"] == "ACTIVE" else "N/A"
+    reward_text = f"{target_r_multiple:.2f}:1" if risk_plan["status"] == "ACTIVE" else "N/A"
     telegram_message = (
         "Gold Version 9.4 — 10-Candle Power\n"
         f"FINAL SIGNAL: {final_signal}\n"
@@ -343,11 +345,10 @@ try:
         f"Signal expiry: {(result.as_of + pd.Timedelta(minutes=30)):%Y-%m-%d %H:%M} UTC\n"
         f"10-candle buying power: {power_v94.buy_power * 100:.1f}%\n"
         f"10-candle selling power: {power_v94.sell_power * 100:.1f}%\n"
-        f"Market pressure: {directional['pressure_indication']}\n"
-        f"Entry reference: USD {entry_value:.2f}\n"
-        f"Stop loss: USD {float(stop_value):.2f}\n"
-        f"Take profit: USD {float(target_value):.2f}\n"
-        f"Reward:risk: {target_r_multiple:.2f}:1\n"
+        f"Stop loss: {stop_text}\n"
+        f"Take profit: {target_text}\n"
+        f"Reward:risk: {reward_text}\n"
+      
         f"Risk status: {risk_plan['status']}\n"
         "Research alert only. No order was submitted."
     )
