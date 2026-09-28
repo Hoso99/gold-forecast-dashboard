@@ -351,8 +351,8 @@ try:
         f"Risk status: {risk_plan['status']}\n"
         "Research alert only. No order was submitted."
     )
-        telegram_delivery = send_telegram_alert(
-            telegram_token, telegram_chat_id, telegram_message)
+    telegram_delivery = send_telegram_alert(
+    telegram_token, telegram_chat_id, telegram_message)
 except Exception as exc:
     st.error(f"Version 9.4 could not run: {exc}")
     st.stop()
