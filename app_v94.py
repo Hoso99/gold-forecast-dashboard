@@ -130,7 +130,7 @@ chart_events = combine_chart_events(official_events, manual_events)
 automatic_event_lock, nearby_official_events = official_event_risk(
     chart_events)
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def free_perpetual_audit():
     return collect_free_perpetual_consensus()
 
