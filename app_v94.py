@@ -271,9 +271,9 @@ try:
             directional_signal_v94 if adaptive_fraction > 0 else "WAIT", gold,
             atr_multiple=stop_atr_multiple, min_tp1_rr=target_r_multiple,
             swing_lookback=swing_lookback, cost_bps=cost_bps)
-            valid_entry_v94 = valid_entry_for_min_rr(
-        structure_plan, directional_signal_v94,
-        min_rr=target_r_multiple)
+        valid_entry_v94 = valid_entry_for_min_rr(
+            structure_plan, directional_signal_v94,
+            min_rr=target_r_multiple)
         daily_locked = (daily_loss_percent <= 0 or realised_pnl <= -(account_equity * daily_loss_percent / 100))
         if structure_plan["status"] == "ACTIVE" and adaptive_fraction > 0 and not daily_locked:
             sizing = size_from_structure(
