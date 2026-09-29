@@ -3,21 +3,46 @@ name: V9.4 Entry Watch
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    # Run shortly after each 15-minute candle boundary.
+    - cron: "2,17,32,47 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v94-entry-watch
+  cancel-in-progress: false
 
 jobs:
   watch:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
-      - name: Check V9.4 entry threshold
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Recalculate and check V9.4 entry threshold
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python entry_watch_v94.py
+
+      - name: Persist watcher state
+        run: |
+          if ! git diff --quiet -- entry_watch_v94.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add entry_watch_v94.json
+            git commit -m "Update V9.4 watcher state"
+            git push
+          fi
