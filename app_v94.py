@@ -1,4 +1,6 @@
 import os
+import json
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -274,6 +276,17 @@ try:
         valid_entry_v94 = valid_entry_for_min_rr(
             structure_plan, directional_signal_v94,
             min_rr=target_r_multiple)
+                if (
+            directional_signal_v94 in {"BUY", "SELL"}
+            and np.isfinite(valid_entry_v94)
+        ):
+            Path("entry_watch_v94.json").write_text(
+                json.dumps({
+                    "side": directional_signal_v94,
+                    "threshold": float(valid_entry_v94),
+                }, indent=2),
+                encoding="utf-8",
+            )
         daily_locked = (daily_loss_percent <= 0 or realised_pnl <= -(account_equity * daily_loss_percent / 100))
         if structure_plan["status"] == "ACTIVE" and adaptive_fraction > 0 and not daily_locked:
             sizing = size_from_structure(
