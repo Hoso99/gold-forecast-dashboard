@@ -1,9 +1,9 @@
 {
   "basis": "10-candle power threshold",
-  "buy_power": 0.628709,
-  "entry_reference": 4151.5719,
-  "model_time": "2026-09-29T10:45:00+00:00",
-  "sell_power": 0.371291,
+  "buy_power": 0.659147,
+  "entry_reference": 4155.3266,
+  "model_time": "2026-09-29T11:00:00+00:00",
+  "sell_power": 0.340853,
   "side": "BUY",
   "structure_reason": "next M15 structure does not provide 2.00R",
   "threshold": null
