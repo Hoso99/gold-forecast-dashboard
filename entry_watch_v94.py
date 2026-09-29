@@ -131,9 +131,7 @@ def calculate_current_setup(api_key: str) -> dict:
     elif early_sell.signal == "SELL":
         side = "SELL"
         basis = f"early SELL acceleration ({early_sell.score:.2f})"
-    elif perpetual.market_lean in {"BUY", "SELL"}:
-        side = perpetual.market_lean
-        basis = "seven-venue market-pressure bias"
+    
     else:
         reversal = _reversal_snapshot(api_key)
         four_module = evaluate_four_modules(
