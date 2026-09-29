@@ -1,10 +1,10 @@
 {
-  "basis": "mixed / insufficient directional evidence",
-  "buy_power": 0.46932,
-  "entry_reference": 4153.9137,
-  "model_time": "2026-09-29T16:15:00+00:00",
-  "sell_power": 0.53068,
-  "side": "WAIT",
-  "structure_reason": "no directional setup",
-  "threshold": null
+  "basis": "10-candle power threshold",
+  "buy_power": 0.408465,
+  "entry_reference": 4149.8409,
+  "model_time": "2026-09-29T16:30:00+00:00",
+  "sell_power": 0.591535,
+  "side": "SELL",
+  "structure_reason": "next M15 structure does not provide 2.00R",
+  "threshold": 4175.3238
 }
