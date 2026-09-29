@@ -249,7 +249,7 @@ def check_once() -> str:
             and reward_risk >= MIN_RR
         )
 
-                if active:
+        if active:
             message = (
                 "Gold Version 9.4 — ACTIVE ENTRY\n"
                 f"DIRECTION: {side}\n"
@@ -270,7 +270,7 @@ def check_once() -> str:
                 "No active entry. No order was submitted."
             )
 
-                delivery = send_telegram_alert(
+        delivery = send_telegram_alert(
             _secret("TELEGRAM_BOT_TOKEN"),
             _secret("TELEGRAM_CHAT_ID"),
             message,
@@ -279,7 +279,7 @@ def check_once() -> str:
             state["last_alert_key"] = alert_key
             state["last_alert_price"] = round(current_price, 4)
     
-                save_state(state)
+        save_state(state)
         return f"{delivery.status}: {delivery.detail}"
 
     save_state(state)
