@@ -132,7 +132,7 @@ def calculate_current_setup(api_key: str) -> dict:
         side = "SELL"
         basis = f"early SELL acceleration ({early_sell.score:.2f})"
     
-    else:
+        else:
         reversal = _reversal_snapshot(api_key)
         four_module = evaluate_four_modules(
             power,
@@ -140,6 +140,13 @@ def calculate_current_setup(api_key: str) -> dict:
             short_trend=trend,
             reversal=reversal,
         )
+
+        print("V9.4 FOUR-MODULE DIAGNOSTICS")
+        for module in four_module.modules:
+            print(f"{module.name}: {module.signal} ({module.score * 100:+.0f}%)")
+        print(f"Four-module score: {four_module.score * 100:+.0f}%")
+        print(f"Four-module qualified signal: {four_module.signal}")
+
         if four_module.score >= 0.05:
             side = "BUY"
             basis = "four-module directional lean"
