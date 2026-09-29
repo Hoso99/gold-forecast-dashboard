@@ -1,10 +1,10 @@
 {
-  "basis": "four-module directional lean",
-  "buy_power": 0.472729,
-  "entry_reference": 4153.7433,
+  "basis": "mixed / insufficient directional evidence",
+  "buy_power": 0.484665,
+  "entry_reference": 4156.5611,
   "model_time": "2026-09-29T15:30:00+00:00",
-  "sell_power": 0.527271,
-  "side": "SELL",
-  "structure_reason": "next M15 structure does not provide 2.00R",
-  "threshold": 4175.7514
+  "sell_power": 0.515335,
+  "side": "WAIT",
+  "structure_reason": "no directional setup",
+  "threshold": null
 }
