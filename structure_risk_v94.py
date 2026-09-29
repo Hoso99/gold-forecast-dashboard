@@ -97,7 +97,28 @@ def structure_atr_plan(side, gold, atr_multiple=1.5, min_tp1_rr=2.0,
             "tp1":float(tp1), "tp1_rr":float(tp1_rr), "tp2":tp2,
             "tp2_rr":tp2_rr, "tp2_source":src}
 
+def valid_entry_for_min_rr(plan, side, min_rr=2.0):
+    """Price at which the current structure first provides the required R:R."""
+    side = str(side).upper()
 
+    if side not in {"BUY", "SELL"}:
+        return np.nan
+
+    stop = float(plan.get("stop", np.nan))
+    target = float(plan.get("tp1", np.nan))
+
+    if not np.isfinite(stop) or not np.isfinite(target):
+        return np.nan
+
+    r = max(float(min_rr), 0.01)
+
+    if side == "BUY":
+        # (target - entry) / (entry - stop) = r
+        return float((target + r * stop) / (1.0 + r))
+
+    # SELL:
+    # (entry - target) / (stop - entry) = r
+    return float((target + r * stop) / (1.0 + r))
 def size_from_structure(plan, equity, risk_fraction, ounces_per_lot=100.0, max_notional_fraction=1.5):
     if plan.get("status") != "ACTIVE" or not (0 < risk_fraction <= .02) or equity <= 0:
         return {"risk_budget":0.0, "max_ounces":0.0, "estimated_lots":0.0}
