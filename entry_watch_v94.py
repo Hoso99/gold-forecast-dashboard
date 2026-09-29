@@ -130,39 +130,21 @@ def calculate_current_setup(api_key: str) -> dict:
     mother = mother_candle_breakout(gold)
     trend = short_term_technical_trend(gold)
 
-    # Preserve the dashboard hierarchy exactly. Only calculate the 5m fallback
-    # input when the first three directional layers did not decide the side.
+        # V9.4 test: the last 10 completed M15 candles are the sole direction engine.
+    # Other modules remain diagnostic only and cannot create or veto direction.
+    print("V9.4 10-CANDLE POWER")
+    print(f"BUY power: {power.directional_buy_power * 100:.0f}%")
+    print(f"SELL power: {power.directional_sell_power * 100:.0f}%")
+    print(f"BUY advantage: {power.directional_buy_advantage * 100:+.0f}%")
+    print(f"SELL advantage: {power.directional_sell_advantage * 100:+.0f}%")
+    print(f"10-candle signal: {power.signal}")
+
     if power.signal in {"BUY", "SELL"}:
         side = power.signal
-        basis = "10-candle power threshold"
-    elif early_sell.signal == "SELL":
-        side = "SELL"
-        basis = f"early SELL acceleration ({early_sell.score:.2f})"
-    
+        basis = "10-candle power"
     else:
-        reversal = _reversal_snapshot(api_key)
-        four_module = evaluate_four_modules(
-            power,
-            mother_breakout=mother,
-            short_trend=trend,
-            reversal=reversal,
-        )
-
-        print("V9.4 FOUR-MODULE DIAGNOSTICS")
-        for module in four_module.modules:
-            print(f"{module.name}: {module.signal} ({module.score * 100:+.0f}%)")
-        print(f"Four-module score: {four_module.score * 100:+.0f}%")
-        print(f"Four-module qualified signal: {four_module.signal}")
-
-        if four_module.score >= 0.05:
-            side = "BUY"
-            basis = "four-module directional lean"
-        elif four_module.score <= -0.05:
-            side = "SELL"
-            basis = "four-module directional lean"
-        else:
-            side = "WAIT"
-            basis = "mixed / insufficient directional evidence"
+        side = "WAIT"
+        basis = "10-candle power below directional threshold"
 
     result = {
         "side": side,
@@ -178,11 +160,8 @@ def calculate_current_setup(api_key: str) -> dict:
     if side not in {"BUY", "SELL"}:
         return result
 
-    # Early SELL remains a warning layer only. It must not unlock an actionable
-    # valid-entry threshold by itself.
-    if basis.startswith("early SELL acceleration"):
-        result["structure_reason"] = "early SELL warning cannot unlock risk sizing"
-        return result
+    
+    entry = float(gold.close.iloc[-1])
 
     plan = structure_atr_plan(
         side,
@@ -192,14 +171,33 @@ def calculate_current_setup(api_key: str) -> dict:
         swing_lookback=SWING_LOOKBACK,
         cost_bps=COST_BPS,
     )
-    threshold = valid_entry_for_min_rr(plan, side, min_rr=MIN_RR)
-    result["structure_reason"] = str(plan.get("reason", ""))
-    result["stop_loss"] = float(plan.get("stop", np.nan))
-    result["take_profit"] = float(plan.get("tp1", np.nan))
-    result["reward_risk"] = float(plan.get("tp1_rr", np.nan))
-    if np.isfinite(threshold) and float(threshold) > 0:
-        result["threshold"] = float(threshold)
+
+    stop_loss = float(plan.get("stop", np.nan))
+
+    if not np.isfinite(stop_loss):
+        result["structure_reason"] = "No valid structure/ATR stop loss"
+        return result
+
+    stop_distance = abs(entry - stop_loss)
+
+    if stop_distance <= 0:
+        result["structure_reason"] = "Invalid stop-loss distance"
+        return result
+
+    if side == "BUY":
+        take_profit = entry + (MIN_RR * stop_distance)
+    else:
+        take_profit = entry - (MIN_RR * stop_distance)
+
+    result["entry_reference"] = entry
+    result["threshold"] = entry
+    result["stop_loss"] = stop_loss
+    result["take_profit"] = take_profit
+    result["reward_risk"] = MIN_RR
+    result["structure_reason"] = "10-candle power + mandatory structure/ATR SL + 2R TP"
+
     return result
+  
 
 
 def check_once() -> str:
@@ -241,7 +239,7 @@ def check_once() -> str:
 
     threshold = float(threshold)
     current_price = float(setup["entry_reference"])
-    reached = threshold_reached(side, current_price, threshold)
+    reached = True
 
     # Deduplicate by completed M15 model candle + side + rounded threshold.
     alert_key = f"{setup['model_time']}|{side}|{threshold:.2f}"
@@ -259,6 +257,11 @@ def check_once() -> str:
             and np.isfinite(take_profit)
             and np.isfinite(reward_risk)
             and reward_risk >= MIN_RR
+            and (
+                (side == "BUY" and stop_loss < current_price < take_profit)
+                or
+                (side == "SELL" and take_profit < current_price < stop_loss)
+            )
         )
 
         if active:
