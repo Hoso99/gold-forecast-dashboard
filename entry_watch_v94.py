@@ -185,7 +185,7 @@ def calculate_current_setup(api_key: str) -> dict:
     result["stop_loss"] = float(plan.get("stop", np.nan))
 result["take_profit"] = float(plan.get("tp1", np.nan))
 result["reward_risk"] = float(plan.get("tp1_rr", np.nan))
-    if np.isfinite(threshold) and float(threshold) > 0:
+if np.isfinite(threshold) and float(threshold) > 0:
         result["threshold"] = float(threshold)
     return result
 
