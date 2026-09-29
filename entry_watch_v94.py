@@ -181,7 +181,7 @@ def calculate_current_setup(api_key: str) -> dict:
         cost_bps=COST_BPS,
     )
     threshold = valid_entry_for_min_rr(plan, side, min_rr=MIN_RR)
-        result["structure_reason"] = str(plan.get("reason", ""))
+    result["structure_reason"] = str(plan.get("reason", ""))
     result["stop_loss"] = float(plan.get("stop", np.nan))
     result["take_profit"] = float(plan.get("tp1", np.nan))
     result["reward_risk"] = float(plan.get("tp1_rr", np.nan))
