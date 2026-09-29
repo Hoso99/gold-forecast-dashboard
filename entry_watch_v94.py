@@ -29,7 +29,7 @@ from telegram_alerts_v93 import send_telegram_alert
 
 STATE_FILE = Path(os.getenv("V94_ENTRY_WATCH_STATE", "entry_watch_v94.json"))
 
-M15_BARS = 200
+M15_BARS = 1200
 M5_BARS = 200
 COST_BPS = 10
 STOP_ATR_MULTIPLE = 1.5
