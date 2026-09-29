@@ -112,7 +112,7 @@ def _reversal_snapshot(api_key: str) -> dict:
 def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
-
+    print(f"Latest M15 candle used: {gold.index[-1]}")
     # GitHub has no live Streamlit-uploaded footprint. The V9.4 candle engine
     # explicitly supports footprint=None; candle pressure remains the primary input.
     power = analyze_last_10_candles(gold, footprint=None)
