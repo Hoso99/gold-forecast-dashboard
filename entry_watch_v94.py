@@ -132,7 +132,7 @@ def calculate_current_setup(api_key: str) -> dict:
         side = "SELL"
         basis = f"early SELL acceleration ({early_sell.score:.2f})"
     
-        else:
+    else:
         reversal = _reversal_snapshot(api_key)
         four_module = evaluate_four_modules(
             power,
