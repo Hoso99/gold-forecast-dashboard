@@ -1,10 +1,10 @@
 {
   "basis": "seven-venue market-pressure bias",
-  "buy_power": 0.494201,
-  "entry_reference": 4159.1308,
-  "model_time": "2026-09-29T13:45:00+00:00",
-  "sell_power": 0.505799,
+  "buy_power": 0.556688,
+  "entry_reference": 4166.2627,
+  "model_time": "2026-09-29T14:00:00+00:00",
+  "sell_power": 0.443312,
   "side": "SELL",
   "structure_reason": "next M15 structure does not provide 2.00R",
-  "threshold": 4163.9731
+  "threshold": 4168.5917
 }
