@@ -133,10 +133,9 @@ def calculate_current_setup(api_key: str) -> dict:
         # V9.4 test: the last 10 completed M15 candles are the sole direction engine.
     # Other modules remain diagnostic only and cannot create or veto direction.
     print("V9.4 10-CANDLE POWER")
-    print(f"BUY power: {power.directional_buy_power * 100:.0f}%")
-    print(f"SELL power: {power.directional_sell_power * 100:.0f}%")
-    print(f"BUY advantage: {power.directional_buy_advantage * 100:+.0f}%")
-    print(f"SELL advantage: {power.directional_sell_advantage * 100:+.0f}%")
+    print(f"BUY power: {power.buy_power * 100:.0f}%")
+    print(f"SELL power: {power.sell_power * 100:.0f}%")
+    print(f"Pressure acceleration: {power.pressure_acceleration * 100:+.0f}%")
     print(f"10-candle signal: {power.signal}")
 
     if power.signal in {"BUY", "SELL"}:
