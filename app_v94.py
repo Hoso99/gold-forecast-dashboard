@@ -390,6 +390,12 @@ try:
     stop_text = f"USD {float(stop_value):.2f}" if risk_plan["status"] == "ACTIVE" else "N/A"
     target_text = f"USD {float(target_value):.2f}" if risk_plan["status"] == "ACTIVE" else "N/A"
     reward_text = f"{target_r_multiple:.2f}:1" if risk_plan["status"] == "ACTIVE" else "N/A"
+    if directional_signal_v94 == "BUY" and np.isfinite(valid_entry_v94):
+                valid_entry_text = f"Valid BUY entry: at or below USD {valid_entry_v94:,.2f}"
+            elif directional_signal_v94 == "SELL" and np.isfinite(valid_entry_v94):
+                valid_entry_text = f"Valid SELL entry: at or above USD {valid_entry_v94:,.2f}"
+            else:
+                valid_entry_text = "Valid entry: N/A"
     telegram_message = (
         "Gold Version 9.4 — 10-Candle Power\n"
         f"DIRECTIONAL SIGNAL: {final_signal}\n"
@@ -400,6 +406,7 @@ try:
         f"10-candle buying power: {power_v94.buy_power * 100:.1f}%\n"
         f"10-candle selling power: {power_v94.sell_power * 100:.1f}%\n"
         f"Entry reference: USD {entry_value:.2f}\n"
+        f"{valid_entry_text}\n"
         f"Stop loss: {stop_text}\n"
         f"Take profit: {target_text}\n"
         f"Reward:risk: {reward_text}\n"
