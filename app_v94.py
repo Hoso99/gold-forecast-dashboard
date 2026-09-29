@@ -276,7 +276,7 @@ try:
         valid_entry_v94 = valid_entry_for_min_rr(
             structure_plan, directional_signal_v94,
             min_rr=target_r_multiple)
-                if (
+        if (
             directional_signal_v94 in {"BUY", "SELL"}
             and np.isfinite(valid_entry_v94)
         ):
