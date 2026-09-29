@@ -1,10 +1,10 @@
 {
   "basis": "four-module directional lean",
-  "buy_power": 0.524591,
-  "entry_reference": 4166.6222,
+  "buy_power": 0.517664,
+  "entry_reference": 4162.2387,
   "model_time": "2026-09-29T15:00:00+00:00",
-  "sell_power": 0.475409,
-  "side": "BUY",
+  "sell_power": 0.482336,
+  "side": "SELL",
   "structure_reason": "next M15 structure does not provide 2.00R",
-  "threshold": 4148.7757
+  "threshold": 4175.5117
 }
