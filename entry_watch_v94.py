@@ -119,6 +119,12 @@ def _reversal_snapshot(api_key: str) -> dict:
 def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
+    live_gold = _download_symbol(
+    api_key, "XAU/USD", 2, interval="1min"
+)
+current_gold_price = float(live_gold.close.iloc[-1])
+
+print(f"Current XAU/USD price: {current_gold_price:.2f}")
     print(f"Latest M15 candle used: {gold.index[-1]}")
     # GitHub has no live Streamlit-uploaded footprint. The V9.4 candle engine
     # explicitly supports footprint=None; candle pressure remains the primary input.
@@ -160,7 +166,7 @@ def calculate_current_setup(api_key: str) -> dict:
         return result
 
     
-    entry = float(gold.close.iloc[-1])
+    entry = current_gold_price
 
     plan = structure_atr_plan(
         side,
