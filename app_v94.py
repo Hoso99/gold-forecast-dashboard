@@ -28,7 +28,8 @@ from official_event_calendar_v830 import (
     download_official_events, event_risk_notice, format_events_gmt,
     official_event_risk)
 from telegram_alerts_v93 import send_telegram_alert
-from structure_risk_v94 import structure_atr_plan, size_from_structure
+from structure_risk_v94 import (
+    structure_atr_plan, size_from_structure, valid_entry_for_min_rr)
 from candle_power_v94 import analyze_last_10_candles, validate_power_signal
 from four_module_v94 import evaluate_four_modules
 from validation_v94 import (
@@ -270,6 +271,9 @@ try:
             directional_signal_v94 if adaptive_fraction > 0 else "WAIT", gold,
             atr_multiple=stop_atr_multiple, min_tp1_rr=target_r_multiple,
             swing_lookback=swing_lookback, cost_bps=cost_bps)
+                valid_entry_v94 = valid_entry_for_min_rr(
+            structure_plan, directional_signal_v94,
+            min_rr=target_r_multiple)
         daily_locked = (daily_loss_percent <= 0 or realised_pnl <= -(account_equity * daily_loss_percent / 100))
         if structure_plan["status"] == "ACTIVE" and adaptive_fraction > 0 and not daily_locked:
             sizing = size_from_structure(
@@ -824,6 +828,21 @@ with decision_tab:
     levels2.metric("Take profit", (
         f'USD {risk_plan["target_price"]:,.2f}'
         if risk_plan["status"] == "ACTIVE" else "N/A"))
+            if (
+            risk_plan["status"] != "ACTIVE"
+            and directional_signal_v94 in {"BUY", "SELL"}
+            and np.isfinite(valid_entry_v94)
+        ):
+            if directional_signal_v94 == "SELL":
+                st.warning(
+                    f"SELL setup: wait for entry at or above USD {valid_entry_v94:,.2f} "
+                    f"to satisfy the minimum {target_r_multiple:.2f}R requirement."
+                )
+            else:
+                st.warning(
+                    f"BUY setup: wait for entry at or below USD {valid_entry_v94:,.2f} "
+                    f"to satisfy the minimum {target_r_multiple:.2f}R requirement."
+                )
     if risk_plan["status"] == "ACTIVE":
         t1, t2, t3, t4 = st.columns(4)
         t1.metric("M15 swing used", f'USD {structure_plan["swing"]:,.2f}')
