@@ -78,6 +78,13 @@ def _fresh_gold(api_key: str):
     gold = _download_symbol(
         api_key, "XAU/USD", M15_BARS, interval="15min"
     )
+    now_utc = pd.Timestamp.now(tz="UTC")
+    latest_open = gold.index[-1]
+    latest_close = latest_open + pd.Timedelta(minutes=15)
+    if now_utc < latest_close:
+            gold = gold.iloc[:-1].copy()
+    if gold.empty:
+                raise RuntimeError("No completed M15 candles are available.")
     if len(gold) < 60:
         raise RuntimeError(
             f"Only {len(gold)} M15 candles were returned; at least 60 are required."
