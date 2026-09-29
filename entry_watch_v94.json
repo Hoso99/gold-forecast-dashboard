@@ -1,10 +1,10 @@
 {
-  "basis": "seven-venue market-pressure bias",
-  "buy_power": 0.503032,
-  "entry_reference": 4151.0206,
+  "basis": "10-candle power threshold",
+  "buy_power": 0.63059,
+  "entry_reference": 4158.9843,
   "model_time": "2026-09-29T11:45:00+00:00",
-  "sell_power": 0.496968,
+  "sell_power": 0.36941,
   "side": "BUY",
   "structure_reason": "next M15 structure does not provide 2.00R",
-  "threshold": 4140.1635
+  "threshold": 4139.6385
 }
