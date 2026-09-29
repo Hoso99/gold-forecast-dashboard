@@ -182,6 +182,9 @@ def calculate_current_setup(api_key: str) -> dict:
     )
     threshold = valid_entry_for_min_rr(plan, side, min_rr=MIN_RR)
     result["structure_reason"] = str(plan.get("reason", ""))
+    result["stop_loss"] = float(plan.get("stop", np.nan))
+result["take_profit"] = float(plan.get("tp1", np.nan))
+result["reward_risk"] = float(plan.get("tp1_rr", np.nan))
     if np.isfinite(threshold) and float(threshold) > 0:
         result["threshold"] = float(threshold)
     return result
@@ -234,23 +237,40 @@ def check_once() -> str:
         state["last_alert_key"] = previous["last_alert_key"]
     if previous.get("last_alert_price") is not None:
         state["last_alert_price"] = previous["last_alert_price"]
-
     if reached and previous.get("last_alert_key") != alert_key:
-        condition = "at or below" if side == "BUY" else "at or above"
-        message = (
-            "Gold Version 9.4 — ENTRY THRESHOLD REACHED\n"
-            f"DIRECTION: {side}\n"
-            f"Directional basis: {setup['basis']}\n"
-            f"Model time: {setup['model_time']}\n"
-            f"Current XAU/USD: USD {current_price:,.2f}\n"
-            f"Valid-entry threshold: {condition} USD {threshold:,.2f}\n"
-            f"10-candle buying power: {setup['buy_power']:.1%}\n"
-            f"10-candle selling power: {setup['sell_power']:.1%}\n"
-            "REVALIDATE V9.4 NOW for a fresh mandatory stop loss, take profit "
-            "and >=2R check.\n"
-            "Threshold alert only. No order was submitted."
+        stop_loss = float(setup.get("stop_loss", np.nan))
+        take_profit = float(setup.get("take_profit", np.nan))
+        reward_risk = float(setup.get("reward_risk", np.nan))
+
+        active = (
+            np.isfinite(stop_loss)
+            and np.isfinite(take_profit)
+            and np.isfinite(reward_risk)
+            and reward_risk >= MIN_RR
         )
-        delivery = send_telegram_alert(
+
+                if active:
+            message = (
+                "Gold Version 9.4 — ACTIVE ENTRY\n"
+                f"DIRECTION: {side}\n"
+                f"Entry: USD {current_price:,.2f}\n"
+                f"Stop loss: USD {stop_loss:,.2f}\n"
+                f"Take profit: USD {take_profit:,.2f}\n"
+                f"Reward/risk: {reward_risk:.2f}R\n"
+                f"Basis: {setup['basis']}\n"
+                "Mandatory SL + TP >=2R confirmed.\n"
+                "Research alert only. No order was submitted."
+            )
+        else:
+            message = (
+                "Gold Version 9.4 — ENTRY BLOCKED\n"
+                f"DIRECTION: {side}\n"
+                f"Price: USD {current_price:,.2f}\n"
+                "Threshold was reached, but fresh SL/TP >=2R validation failed.\n"
+                "No active entry. No order was submitted."
+            )
+
+                delivery = send_telegram_alert(
             _secret("TELEGRAM_BOT_TOKEN"),
             _secret("TELEGRAM_CHAT_ID"),
             message,
@@ -258,7 +278,8 @@ def check_once() -> str:
         if delivery.status == "SENT":
             state["last_alert_key"] = alert_key
             state["last_alert_price"] = round(current_price, 4)
-        save_state(state)
+    
+                save_state(state)
         return f"{delivery.status}: {delivery.detail}"
 
     save_state(state)
