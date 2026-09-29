@@ -1,9 +1,9 @@
 {
   "basis": "mixed / insufficient directional evidence",
-  "buy_power": 0.508483,
-  "entry_reference": 4158.5223,
-  "model_time": "2026-09-29T15:45:00+00:00",
-  "sell_power": 0.491517,
+  "buy_power": 0.46932,
+  "entry_reference": 4153.9137,
+  "model_time": "2026-09-29T16:15:00+00:00",
+  "sell_power": 0.53068,
   "side": "WAIT",
   "structure_reason": "no directional setup",
   "threshold": null
