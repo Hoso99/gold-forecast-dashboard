@@ -391,11 +391,11 @@ try:
     target_text = f"USD {float(target_value):.2f}" if risk_plan["status"] == "ACTIVE" else "N/A"
     reward_text = f"{target_r_multiple:.2f}:1" if risk_plan["status"] == "ACTIVE" else "N/A"
     if directional_signal_v94 == "BUY" and np.isfinite(valid_entry_v94):
-                valid_entry_text = f"Valid BUY entry: at or below USD {valid_entry_v94:,.2f}"
-            elif directional_signal_v94 == "SELL" and np.isfinite(valid_entry_v94):
-                valid_entry_text = f"Valid SELL entry: at or above USD {valid_entry_v94:,.2f}"
-            else:
-                valid_entry_text = "Valid entry: N/A"
+            valid_entry_text = f"Valid BUY entry: at or below USD {valid_entry_v94:,.2f}"
+    elif directional_signal_v94 == "SELL" and np.isfinite(valid_entry_v94):
+            valid_entry_text = f"Valid SELL entry: at or above USD {valid_entry_v94:,.2f}"
+    else:
+            valid_entry_text = "Valid entry: N/A"
     telegram_message = (
         "Gold Version 9.4 — 10-Candle Power\n"
         f"DIRECTIONAL SIGNAL: {final_signal}\n"
