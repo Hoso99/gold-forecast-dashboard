@@ -231,9 +231,41 @@ try:
         directional["actionable"] = (
             decision.action in {"BUY", "SELL"} and
             directional["lean"].startswith(decision.action))
-        adaptive_fraction, adaptive_risk_reason = adaptive_risk_fraction(
-            four_module, max_fraction=risk_percent / 100,
-            consecutive_losses=consecutive_losses)
+          # V9.4 primary directional hierarchy.
+        if power_v94.signal in {"BUY", "SELL"}:
+            directional_signal_v94 = power_v94.signal
+            directional_basis_v94 = "10-candle power threshold"
+        elif early_sell_v94.signal == "SELL":
+            directional_signal_v94 = "SELL"
+            directional_basis_v94 = f"early SELL acceleration ({early_sell_v94.score:.2f})"
+        elif perpetual_consensus.market_lean in {"BUY", "SELL"}:
+            directional_signal_v94 = perpetual_consensus.market_lean
+            directional_basis_v94 = "seven-venue market-pressure bias"
+        elif four_module.score >= 0.05:
+            directional_signal_v94 = "BUY"
+            directional_basis_v94 = "four-module directional lean"
+        elif four_module.score <= -0.05:
+            directional_signal_v94 = "SELL"
+            directional_basis_v94 = "four-module directional lean"
+        else:
+            directional_signal_v94 = "WAIT"
+            directional_basis_v94 = "mixed / insufficient directional evidence"
+        # Risk sizing follows the primary V9.4 direction.
+        # Four-module disagreement is informational, not a release veto.
+        if (
+    directional_signal_v94 in {"BUY", "SELL"}
+    and consecutive_losses < 3
+    and directional_basis_v94 != f"early SELL acceleration ({early_sell_v94.score:.2f})"
+):
+            adaptive_fraction = min(risk_percent / 100, 0.005)
+            adaptive_risk_reason = "V9.4 DIRECTIONAL RISK"
+        else:
+            adaptive_fraction = 0.0
+            adaptive_risk_reason = (
+                "CONSECUTIVE LOSS LOCK"
+                if consecutive_losses >= 3
+                else "NO DIRECTIONAL SIGNAL"
+            )
         structure_plan = structure_atr_plan(
             directional_signal_v94 if adaptive_fraction > 0 else "WAIT", gold,
             atr_multiple=stop_atr_multiple, min_tp1_rr=target_r_multiple,
@@ -244,7 +276,7 @@ try:
                 structure_plan, account_equity, adaptive_fraction,
                 ounces_per_lot=ounces_per_lot, max_notional_fraction=notional_multiple)
             risk_plan = {
-                "status":"ACTIVE", "reason":"four-module, structure, >=2R final-target and daily-risk gates passed",
+                "status":"ACTIVE", "reason":"direction, mandatory SL, >=2R TP and daily-risk gates passed",
                 "risk_budget":sizing["risk_budget"], "risk_fraction":adaptive_fraction,
                 "stop_distance":structure_plan["risk_distance"], "stop_price":structure_plan["stop"],
                 "target_price":structure_plan["tp1"], "max_ounces":sizing["max_ounces"],
@@ -339,27 +371,7 @@ try:
              "target": risk_plan["target_price"]}
             if risk_plan["status"] == "ACTIVE" else assumption_levels)
 
-        # Keep directional information separate from execution safety.  The
-        # directional signal may be BUY/SELL while the trade remains BLOCKED.
-        # This does not bypass any event, shock, structure, R:R or risk gate.
-        if power_v94.signal in {"BUY", "SELL"}:
-            directional_signal_v94 = power_v94.signal
-            directional_basis_v94 = "10-candle power threshold"
-        elif early_sell_v94.signal == "SELL":
-            directional_signal_v94 = "SELL"
-            directional_basis_v94 = f"early SELL acceleration ({early_sell_v94.score:.2f})"
-        elif perpetual_consensus.market_lean in {"BUY", "SELL"}:
-            directional_signal_v94 = perpetual_consensus.market_lean
-            directional_basis_v94 = "seven-venue market-pressure bias"
-        elif four_module.score >= 0.05:
-            directional_signal_v94 = "BUY"
-            directional_basis_v94 = "four-module directional lean"
-        elif four_module.score <= -0.05:
-            directional_signal_v94 = "SELL"
-            directional_basis_v94 = "four-module directional lean"
-        else:
-            directional_signal_v94 = "WAIT"
-            directional_basis_v94 = "mixed / insufficient directional evidence"
+        
 
         final_signal = directional_signal_v94
     release_status = (
@@ -816,7 +828,7 @@ with decision_tab:
         t1, t2, t3, t4 = st.columns(4)
         t1.metric("M15 swing used", f'USD {structure_plan["swing"]:,.2f}')
         t2.metric("ATR 14", f'USD {structure_plan["atr"]:,.2f}')
-        one_r = structure_plan["entry"] + (structure_plan["risk_distance"] if four_module.signal == "BUY" else -structure_plan["risk_distance"])
+        one_r = structure_plan["entry"] + (structure_plan["risk_distance"] if directional_signal_v94 == "BUY" else -structure_plan["risk_distance"])
         t3.metric("Partial target (+1R)", f'USD {one_r:,.2f} · close 50%')
         t4.metric("Final structural TP", f'USD {structure_plan["tp1"]:,.2f} · {structure_plan["tp1_rr"]:.2f}R')
         if np.isfinite(structure_plan.get("tp2", np.nan)) and structure_plan.get("tp2_rr", 0) >= 3.0:
