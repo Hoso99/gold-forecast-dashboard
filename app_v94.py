@@ -828,7 +828,7 @@ with decision_tab:
     levels2.metric("Take profit", (
         f'USD {risk_plan["target_price"]:,.2f}'
         if risk_plan["status"] == "ACTIVE" else "N/A"))
-            if (
+    if (
             risk_plan["status"] != "ACTIVE"
             and directional_signal_v94 in {"BUY", "SELL"}
             and np.isfinite(valid_entry_v94)
