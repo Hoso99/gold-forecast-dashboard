@@ -44,5 +44,5 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add entry_watch_v94.json
             git commit -m "Update V9.4 watcher state"
-            git push
+            git pull --rebase origin main && git push
           fi
