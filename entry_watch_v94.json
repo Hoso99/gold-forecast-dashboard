@@ -1,4 +1,10 @@
 {
-  "side": "SELL",
-  "threshold": 4147.66
+  "basis": "mixed / insufficient directional evidence",
+  "buy_power": 0.481666,
+  "entry_reference": 4142.9533,
+  "model_time": "2026-09-29T09:15:00+00:00",
+  "sell_power": 0.518334,
+  "side": "WAIT",
+  "structure_reason": "no directional setup",
+  "threshold": null
 }
