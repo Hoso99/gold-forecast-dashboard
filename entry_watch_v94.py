@@ -243,7 +243,7 @@ def check_once() -> str:
     reached = True
 
     # Deduplicate by completed M15 model candle + side + rounded threshold.
-    alert_key = f"{setup['model_time']}|{side}|{threshold:.2f}"
+    alert_key = f"{setup['model_time']}|{side}"
     if previous.get("last_alert_key"):
         state["last_alert_key"] = previous["last_alert_key"]
     if previous.get("last_alert_price") is not None:
