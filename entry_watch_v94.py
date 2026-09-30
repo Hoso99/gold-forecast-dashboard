@@ -338,23 +338,23 @@ def check_once() -> str:
         )
 
         if active:
-        message = (
-            "Gold Version 9.4 — ACTIVE ENTRY\n"
-            f"DIRECTION: {side}\n"
-            f"Entry: USD {current_price:,.2f}\n"
-            f"Stop loss: USD {stop_loss:,.2f}\n"
-            f"Take profit: USD {take_profit:,.2f}\n"
-            f"Reward/risk: {reward_risk:.2f}R\n\n"
-            "SL DETAILS\n"
-            f"Confirmed swing high: USD {setup['swing_high']:,.2f}\n"
-            f"ATR14: USD {setup['atr14']:,.2f}\n"
-            f"ATR buffer (1.5x): USD {setup['atr_buffer']:,.2f}\n"
-            f"Stop distance: USD {setup['stop_distance']:,.2f}\n\n"
-            f"SELL power: {setup['sell_power'] * 100:.2f}%\n"
-            f"Basis: {setup['basis']}\n"
-            "Mandatory SL + TP >=2R confirmed.\n"
-            "Research alert only. No order was submitted."
-        )
+            message = (
+                "Gold Version 9.4 — ACTIVE ENTRY\n"
+                f"DIRECTION: {side}\n"
+                f"Entry: USD {current_price:,.2f}\n"
+                f"Stop loss: USD {stop_loss:,.2f}\n"
+                f"Take profit: USD {take_profit:,.2f}\n"
+                f"Reward/risk: {reward_risk:.2f}R\n\n"
+                "SL DETAILS\n"
+                f"Confirmed swing high: USD {setup['swing_high']:,.2f}\n"
+                f"ATR14: USD {setup['atr14']:,.2f}\n"
+                f"ATR buffer (1.5x): USD {setup['atr_buffer']:,.2f}\n"
+                f"Stop distance: USD {setup['stop_distance']:,.2f}\n\n"
+                f"SELL power: {setup['sell_power'] * 100:.2f}%\n"
+                f"Basis: {setup['basis']}\n"
+                "Mandatory SL + TP >=2R confirmed.\n"
+                "Research alert only. No order was submitted."
+            )
         else:
             message = (
                 "Gold Version 9.4 — ENTRY BLOCKED\n"
