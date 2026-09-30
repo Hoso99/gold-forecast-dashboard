@@ -81,6 +81,53 @@ def save_journal(journal: list) -> None:
     )
 
 
+def update_open_trades(gold) -> None:
+    journal = load_journal()
+    changed = False
+
+    for trade in journal:
+        if trade.get("status") != "OPEN":
+            continue
+
+        side = str(trade.get("side", "")).upper()
+        if side != "SELL":
+            continue
+
+        entry_time = pd.Timestamp(trade["model_time"])
+        stop_loss = float(trade["stop_loss"])
+        take_profit = float(trade["take_profit"])
+
+        candles = gold[gold.index > entry_time]
+
+        for candle_time, candle in candles.iterrows():
+            hit_sl = float(candle["high"]) >= stop_loss
+            hit_tp = float(candle["low"]) <= take_profit
+
+            if hit_sl and hit_tp:
+                trade["status"] = "AMBIGUOUS"
+                trade["exit_time"] = candle_time.isoformat()
+                changed = True
+                break
+
+            if hit_sl:
+                trade["status"] = "LOSS"
+                trade["exit_time"] = candle_time.isoformat()
+                trade["exit_price"] = stop_loss
+                trade["outcome_r"] = -1.0
+                changed = True
+                break
+
+            if hit_tp:
+                trade["status"] = "WIN"
+                trade["exit_time"] = candle_time.isoformat()
+                trade["exit_price"] = take_profit
+                trade["outcome_r"] = float(trade["reward_risk"])
+                changed = True
+                break
+
+    if changed:
+        save_journal(journal)
+
 def threshold_reached(side: str, price: float, threshold: float) -> bool:
     side = side.upper()
     if side == "BUY":
@@ -221,7 +268,8 @@ def check_once() -> str:
     api_key = _secret("TWELVE_DATA_API_KEY")
     if not api_key:
         raise RuntimeError("TWELVE_DATA_API_KEY is missing.")
-
+ gold_for_outcomes = _fresh_gold(api_key)
+    update_open_trades(gold_for_outcomes)
     previous = load_state()
     setup = calculate_current_setup(api_key)
 
