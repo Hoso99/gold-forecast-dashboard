@@ -72,7 +72,33 @@ def _download_symbol(api_key: str, symbol: str, outputsize: int,
     frame = frame.set_index("datetime").sort_index()[numeric_columns]
     required_values = ["open", "high", "low", "close"]
     return frame[~frame.index.duplicated(keep="last")].dropna(subset=required_values)
+def current_gold_price(api_key: str) -> float:
+    """Return the freshest available XAU/USD price from Twelve Data."""
+    query = urlencode({
+        "symbol": "XAU/USD",
+        "apikey": api_key,
+    })
+    try:
+        with urlopen(f"https://api.twelvedata.com/price?{query}", timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(
+            f"Twelve Data price request returned HTTP {exc.code}."
+        ) from exc
+    except URLError as exc:
+        raise RuntimeError(
+            f"Could not connect to Twelve Data price endpoint: {exc.reason}"
+        ) from exc
 
+    if payload.get("status") == "error" or "price" not in payload:
+        message = payload.get("message", "No XAU/USD price returned.")
+        raise RuntimeError(f"Twelve Data price error: {message}")
+
+    price = float(payload["price"])
+    if not np.isfinite(price) or price <= 0:
+        raise RuntimeError("Twelve Data returned an invalid XAU/USD price.")
+
+    return price
 
 def download_market_data(api_key: str, outputsize: int = 5000) -> pd.DataFrame:
     """Backward-compatible XAU/USD downloader."""
