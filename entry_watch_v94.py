@@ -237,13 +237,13 @@ def calculate_current_setup(api_key: str) -> dict:
         entry_price=entry,
     )
 
-    stop_loss = float(plan.get("stop", np.nan))
+        stop_loss = float(plan.get("stop", np.nan))
     swing_high = float(plan.get("swing", np.nan))
-atr14 = float(plan.get("atr", np.nan))
-atr_buffer = STOP_ATR_MULTIPLE * atr14
-stop_distance_detail = abs(entry - stop_loss)
+    atr14 = float(plan.get("atr", np.nan))
+    atr_buffer = STOP_ATR_MULTIPLE * atr14
+    stop_distance_detail = abs(entry - stop_loss)
 
-if not np.isfinite(stop_loss):
+    if not np.isfinite(stop_loss):
         result["structure_reason"] = "No valid structure/ATR stop loss"
         return result
 
