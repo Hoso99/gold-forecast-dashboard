@@ -207,7 +207,7 @@ for event in future_events:
     )
 
     print(
-        f"Gold impact: {event['relevance']}"
+        f"Gold impact: {event['relevance']}" 
     )
 
     print(
