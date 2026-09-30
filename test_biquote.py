@@ -1,7 +1,7 @@
 import json
 import urllib.request
 
-URL = "https://api.biquote.io/v1/tick/XAUUSD"
+URL = "https://biquote.io/api/XAUUSD"
 
 print("Testing biquote XAU/USD feed...")
 print(f"URL: {URL}")
