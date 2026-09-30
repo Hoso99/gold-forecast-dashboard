@@ -238,6 +238,10 @@ def calculate_current_setup(api_key: str) -> dict:
     )
 
     stop_loss = float(plan.get("stop", np.nan))
+    swing_high = float(plan.get("swing", np.nan))
+atr14 = float(plan.get("atr", np.nan))
+atr_buffer = STOP_ATR_MULTIPLE * atr14
+stop_distance_detail = abs(entry - stop_loss)
 
     if not np.isfinite(stop_loss):
         result["structure_reason"] = "No valid structure/ATR stop loss"
@@ -256,6 +260,10 @@ def calculate_current_setup(api_key: str) -> dict:
     result["stop_loss"] = stop_loss
     result["take_profit"] = take_profit
     result["reward_risk"] = MIN_RR
+result["swing_high"] = swing_high
+result["atr14"] = atr14
+result["atr_buffer"] = atr_buffer
+result["stop_distance"] = stop_distance_detail
     result["structure_reason"] = (
         "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
     )
@@ -330,17 +338,23 @@ def check_once() -> str:
         )
 
         if active:
-            message = (
-                "Gold Version 9.4 — ACTIVE ENTRY\n"
-                f"DIRECTION: {side}\n"
-                f"Entry: USD {current_price:,.2f}\n"
-                f"Stop loss: USD {stop_loss:,.2f}\n"
-                f"Take profit: USD {take_profit:,.2f}\n"
-                f"Reward/risk: {reward_risk:.2f}R\n"
-                f"Basis: {setup['basis']}\n"
-                "Mandatory SL + TP >=2R confirmed.\n"
-                "Research alert only. No order was submitted."
-            )
+        message = (
+            "Gold Version 9.4 — ACTIVE ENTRY\n"
+            f"DIRECTION: {side}\n"
+            f"Entry: USD {current_price:,.2f}\n"
+            f"Stop loss: USD {stop_loss:,.2f}\n"
+            f"Take profit: USD {take_profit:,.2f}\n"
+            f"Reward/risk: {reward_risk:.2f}R\n\n"
+            "SL DETAILS\n"
+            f"Confirmed swing high: USD {setup['swing_high']:,.2f}\n"
+            f"ATR14: USD {setup['atr14']:,.2f}\n"
+            f"ATR buffer (1.5x): USD {setup['atr_buffer']:,.2f}\n"
+            f"Stop distance: USD {setup['stop_distance']:,.2f}\n\n"
+            f"SELL power: {setup['sell_power'] * 100:.2f}%\n"
+            f"Basis: {setup['basis']}\n"
+            "Mandatory SL + TP >=2R confirmed.\n"
+            "Research alert only. No order was submitted."
+        )
         else:
             message = (
                 "Gold Version 9.4 — ENTRY BLOCKED\n"
