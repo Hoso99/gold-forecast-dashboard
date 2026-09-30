@@ -144,23 +144,23 @@ def calculate_current_setup(api_key: str) -> dict:
     print(f"Pressure acceleration: {power.pressure_acceleration * 100:+.0f}%")
     print(f"10-candle signal: {power.signal}")
 
-if power.signal == "SELL":
-        side = "SELL"
-        basis = "10-candle power"
-else:
-    side = "WAIT"
-    basis = "SELL-only mode: no SELL signal"
-
-result = {
-            "side": side,
-            "basis": basis,
-            "model_time": gold.index[-1].isoformat(),
-            "entry_reference": float(gold.close.iloc[-1]),
-            "buy_power": float(power.buy_power),
-            "sell_power": float(power.sell_power),
-            "threshold": None,
-            "structure_reason": "no directional setup",
-        }
+    if power.signal == "SELL":
+            side = "SELL"
+            basis = "10-candle power"
+    else:
+        side = "WAIT"
+        basis = "SELL-only mode: no SELL signal"
+    
+    result = {
+                "side": side,
+                "basis": basis,
+                "model_time": gold.index[-1].isoformat(),
+                "entry_reference": float(gold.close.iloc[-1]),
+                "buy_power": float(power.buy_power),
+                "sell_power": float(power.sell_power),
+                "threshold": None,
+                "structure_reason": "no directional setup",
+            }
 
         if side not in {"BUY", "SELL"}:
             return result
