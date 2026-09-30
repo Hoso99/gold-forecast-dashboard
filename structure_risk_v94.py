@@ -54,7 +54,7 @@ def _higher_timeframe_target(gold, entry, side):
 
 
 def structure_atr_plan(side, gold, atr_multiple=1.5, min_tp1_rr=2.0,
-                       swing_lookback=48, cost_bps=10):
+                       swing_lookback=48, cost_bps=10, entry_price=None):
     """M15 structure + ATR stop with a minimum structural final target R:R gate."""
     side = str(side).upper()
     empty = {"status":"WAIT", "reason":"no qualified direction", "entry":np.nan,
@@ -64,7 +64,8 @@ def structure_atr_plan(side, gold, atr_multiple=1.5, min_tp1_rr=2.0,
              "min_tp1_rr":float(min_tp1_rr)}
     if side not in {"BUY","SELL"} or gold is None or len(gold) < 30:
         return empty
-    entry = float(gold.close.astype(float).iloc[-1]); atr = _atr14(gold)
+    entry = float(entry_price) if entry_price is not None else float(gold.close.astype(float).iloc[-1])
+atr = _atr14(gold)
     if not np.isfinite(atr) or atr <= 0 or entry <= 0:
         return {**empty, "entry":entry, "reason":"invalid ATR or price"}
     sh, sl = _confirmed_swings(gold, swing_lookback)
