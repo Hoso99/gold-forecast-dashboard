@@ -276,7 +276,7 @@ def check_once() -> str:
     api_key = _secret("TWELVE_DATA_API_KEY")
     if not api_key:
         raise RuntimeError("TWELVE_DATA_API_KEY is missing.")
- gold_for_outcomes = _fresh_gold(api_key)
+    gold_for_outcomes = _fresh_gold(api_key)
     update_open_trades(gold_for_outcomes)
     previous = load_state()
     setup = calculate_current_setup(api_key)
