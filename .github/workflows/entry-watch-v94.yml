@@ -39,10 +39,10 @@ jobs:
 
       - name: Persist watcher state
         run: |
-          if ! git diff --quiet -- entry_watch_v94.json; then
+          if ! git diff --quiet -- entry_watch_v94.json trade_journal_v94.json || [ -f trade_journal_v94.json ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add entry_watch_v94.json
+            git add entry_watch_v94.json trade_journal_v94.json
             git commit -m "Update V9.4 watcher state"
             git pull --rebase origin main && git push
           fi
