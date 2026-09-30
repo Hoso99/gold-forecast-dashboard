@@ -311,20 +311,20 @@ def check_once() -> str:
             state["last_alert_key"] = alert_key
             state["last_alert_price"] = round(current_price, 4)
             if active:
-            journal = load_journal()
-            journal.append({
-                "model_time": setup["model_time"],
-                "side": side,
-                "entry": round(current_price, 4),
-                "stop_loss": round(stop_loss, 4),
-                "take_profit": round(take_profit, 4),
-                "reward_risk": round(reward_risk, 2),
-                "buy_power": round(float(setup["buy_power"]), 4),
-                "sell_power": round(float(setup["sell_power"]), 4),
-                "basis": setup["basis"],
-                "status": "OPEN",
-            })
-            save_journal(journal)
+                journal = load_journal()
+                journal.append({
+                    "model_time": setup["model_time"],
+                    "side": side,
+                    "entry": round(current_price, 4),
+                    "stop_loss": round(stop_loss, 4),
+                    "take_profit": round(take_profit, 4),
+                    "reward_risk": round(reward_risk, 2),
+                    "buy_power": round(float(setup["buy_power"]), 4),
+                    "sell_power": round(float(setup["sell_power"]), 4),
+                    "basis": setup["basis"],
+                    "status": "OPEN",
+                })
+                save_journal(journal)
     
         save_state(state)
         return f"{delivery.status}: {delivery.detail}"
