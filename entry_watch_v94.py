@@ -170,8 +170,9 @@ print(f"Fresh XAU/USD SELL entry price: {entry:.2f}")
         atr_multiple=STOP_ATR_MULTIPLE,
         min_tp1_rr=MIN_RR,
         swing_lookback=SWING_LOOKBACK,
-        cost_bps=COST_BPS,
-    )
+      cost_bps=COST_BPS,
+entry_price=entry,
+)
 
     stop_loss = float(plan.get("stop", np.nan))
 
