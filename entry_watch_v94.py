@@ -247,28 +247,28 @@ def calculate_current_setup(api_key: str) -> dict:
         result["structure_reason"] = "No valid structure/ATR stop loss"
         return result
 
-stop_distance = abs(entry - stop_loss)
+    stop_distance = abs(entry - stop_loss)
+    
+    if stop_distance <= 0:
+            result["structure_reason"] = "Invalid stop-loss distance"
+            return result
+    
+    take_profit = entry - (MIN_RR * stop_distance)
+    
+    result["entry_reference"] = entry
+    result["threshold"] = entry
+    result["stop_loss"] = stop_loss
+    result["take_profit"] = take_profit
+    result["reward_risk"] = MIN_RR
+    result["swing_high"] = swing_high
+    result["atr14"] = atr14
+    result["atr_buffer"] = atr_buffer
+    result["stop_distance"] = stop_distance_detail
+    result["structure_reason"] = (
+            "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
+        )
 
-if stop_distance <= 0:
-        result["structure_reason"] = "Invalid stop-loss distance"
-        return result
-
-take_profit = entry - (MIN_RR * stop_distance)
-
-result["entry_reference"] = entry
-result["threshold"] = entry
-result["stop_loss"] = stop_loss
-result["take_profit"] = take_profit
-result["reward_risk"] = MIN_RR
-result["swing_high"] = swing_high
-result["atr14"] = atr14
-result["atr_buffer"] = atr_buffer
-result["stop_distance"] = stop_distance_detail
-result["structure_reason"] = (
-        "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
-    )
-
-return result
+    return result
   
 
 
