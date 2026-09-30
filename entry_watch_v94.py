@@ -151,57 +151,57 @@ else:
     side = "WAIT"
     basis = "SELL-only mode: no SELL signal"
 
-    result = {
-        "side": side,
-        "basis": basis,
-        "model_time": gold.index[-1].isoformat(),
-        "entry_reference": float(gold.close.iloc[-1]),
-        "buy_power": float(power.buy_power),
-        "sell_power": float(power.sell_power),
-        "threshold": None,
-        "structure_reason": "no directional setup",
-    }
+result = {
+            "side": side,
+            "basis": basis,
+            "model_time": gold.index[-1].isoformat(),
+            "entry_reference": float(gold.close.iloc[-1]),
+            "buy_power": float(power.buy_power),
+            "sell_power": float(power.sell_power),
+            "threshold": None,
+            "structure_reason": "no directional setup",
+        }
 
-    if side not in {"BUY", "SELL"}:
-        return result
+        if side not in {"BUY", "SELL"}:
+            return result
 
     
-    entry = current_gold_price
+        entry = current_gold_price
 
-    plan = structure_atr_plan(
-        side,
-        gold,
-        atr_multiple=STOP_ATR_MULTIPLE,
-        min_tp1_rr=MIN_RR,
-        swing_lookback=SWING_LOOKBACK,
-        cost_bps=COST_BPS,
-    )
+        plan = structure_atr_plan(
+            side,
+            gold,
+            atr_multiple=STOP_ATR_MULTIPLE,
+            min_tp1_rr=MIN_RR,
+            swing_lookback=SWING_LOOKBACK,
+            cost_bps=COST_BPS,
+        )
 
-    stop_loss = float(plan.get("stop", np.nan))
+        stop_loss = float(plan.get("stop", np.nan))
 
-    if not np.isfinite(stop_loss):
-        result["structure_reason"] = "No valid structure/ATR stop loss"
+        if not np.isfinite(stop_loss):
+            result["structure_reason"] = "No valid structure/ATR stop loss"
+            return result
+
+        stop_distance = abs(entry - stop_loss)
+
+        if stop_distance <= 0:
+            result["structure_reason"] = "Invalid stop-loss distance"
+            return result
+
+        if side == "BUY":
+            take_profit = entry + (MIN_RR * stop_distance)
+        else:
+            take_profit = entry - (MIN_RR * stop_distance)
+    
+        result["entry_reference"] = entry
+        result["threshold"] = entry
+        result["stop_loss"] = stop_loss
+        result["take_profit"] = take_profit
+        result["reward_risk"] = MIN_RR
+        result["structure_reason"] = "10-candle power + mandatory structure/ATR SL + 2R TP"
+    
         return result
-
-    stop_distance = abs(entry - stop_loss)
-
-    if stop_distance <= 0:
-        result["structure_reason"] = "Invalid stop-loss distance"
-        return result
-
-    if side == "BUY":
-        take_profit = entry + (MIN_RR * stop_distance)
-    else:
-        take_profit = entry - (MIN_RR * stop_distance)
-
-    result["entry_reference"] = entry
-    result["threshold"] = entry
-    result["stop_loss"] = stop_loss
-    result["take_profit"] = take_profit
-    result["reward_risk"] = MIN_RR
-    result["structure_reason"] = "10-candle power + mandatory structure/ATR SL + 2R TP"
-
-    return result
   
 
 
