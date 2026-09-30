@@ -64,14 +64,14 @@ def save_state(state: dict) -> None:
         json.dumps(state, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    def load_journal() -> list:
-    if not JOURNAL_FILE.exists():
-        return []
-    try:
-        data = json.loads(JOURNAL_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, json.JSONDecodeError):
-        return []
+   def load_journal() -> list:
+        if not JOURNAL_FILE.exists():
+            return []
+        try:
+            data = json.loads(JOURNAL_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except (OSError, json.JSONDecodeError):
+            return []
 
 
 def save_journal(journal: list) -> None:
