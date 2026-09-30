@@ -144,12 +144,12 @@ def calculate_current_setup(api_key: str) -> dict:
     print(f"Pressure acceleration: {power.pressure_acceleration * 100:+.0f}%")
     print(f"10-candle signal: {power.signal}")
 
-    if power.signal in {"BUY", "SELL"}:
-        side = power.signal
-        basis = "10-candle power"
-    else:
-        side = "WAIT"
-        basis = "10-candle power below directional threshold"
+    if power.signal == "SELL":
+    side = "SELL"
+    basis = "10-candle power"
+else:
+    side = "WAIT"
+    basis = "SELL-only mode: no SELL signal"
 
     result = {
         "side": side,
