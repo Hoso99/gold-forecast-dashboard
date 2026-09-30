@@ -28,6 +28,7 @@ from telegram_alerts_v93 import send_telegram_alert
 
 
 STATE_FILE = Path(os.getenv("V94_ENTRY_WATCH_STATE", "entry_watch_v94.json"))
+JOURNAL_FILE = Path(os.getenv("V94_TRADE_JOURNAL", "trade_journal_v94.json"))
 
 M15_BARS = 1200
 M5_BARS = 200
@@ -61,6 +62,21 @@ def load_state() -> dict:
 def save_state(state: dict) -> None:
     STATE_FILE.write_text(
         json.dumps(state, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    def load_journal() -> list:
+    if not JOURNAL_FILE.exists():
+        return []
+    try:
+        data = json.loads(JOURNAL_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def save_journal(journal: list) -> None:
+    JOURNAL_FILE.write_text(
+        json.dumps(journal, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -294,6 +310,21 @@ def check_once() -> str:
         if delivery.status == "SENT":
             state["last_alert_key"] = alert_key
             state["last_alert_price"] = round(current_price, 4)
+            if active:
+            journal = load_journal()
+            journal.append({
+                "model_time": setup["model_time"],
+                "side": side,
+                "entry": round(current_price, 4),
+                "stop_loss": round(stop_loss, 4),
+                "take_profit": round(take_profit, 4),
+                "reward_risk": round(reward_risk, 2),
+                "buy_power": round(float(setup["buy_power"]), 4),
+                "sell_power": round(float(setup["sell_power"]), 4),
+                "basis": setup["basis"],
+                "status": "OPEN",
+            })
+            save_journal(journal)
     
         save_state(state)
         return f"{delivery.status}: {delivery.detail}"
