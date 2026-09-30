@@ -114,7 +114,7 @@ def _reversal_snapshot(api_key: str) -> dict:
         }
     except Exception:
         return {"current_signal": 0, "status": "UNAVAILABLE"}
-     def calculate_current_setup(api_key: str) -> dict:
+def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
 
