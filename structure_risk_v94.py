@@ -65,7 +65,7 @@ def structure_atr_plan(side, gold, atr_multiple=1.5, min_tp1_rr=2.0,
     if side not in {"BUY","SELL"} or gold is None or len(gold) < 30:
         return empty
     entry = float(entry_price) if entry_price is not None else float(gold.close.astype(float).iloc[-1])
-atr = _atr14(gold)
+    atr = _atr14(gold)
     if not np.isfinite(atr) or atr <= 0 or entry <= 0:
         return {**empty, "entry":entry, "reason":"invalid ATR or price"}
     sh, sl = _confirmed_swings(gold, swing_lookback)
