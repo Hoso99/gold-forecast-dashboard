@@ -110,22 +110,22 @@ def _reversal_snapshot(api_key: str) -> dict:
         states = five_minute_reversal_states(gold_5m)
         return {
             "current_signal": int(states.signal.iloc[-1]),
-            "status": "RAW CURRENT STATE",
+                        "status": "RAW CURRENT STATE",
         }
     except Exception:
         return {"current_signal": 0, "status": "UNAVAILABLE"}
-
-
-def calculate_current_setup(api_key: str) -> dict:
+     def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
+
     live_gold = _download_symbol(
-    api_key, "XAU/USD", 2, interval="1min"
+        api_key, "XAU/USD", 2, interval="1min"
     )
     current_gold_price = float(live_gold.close.iloc[-1])
 
     print(f"Current XAU/USD price: {current_gold_price:.2f}")
     print(f"Latest M15 candle used: {gold.index[-1]}")
+
     # GitHub has no live Streamlit-uploaded footprint. The V9.4 candle engine
     # explicitly supports footprint=None; candle pressure remains the primary input.
     power = analyze_last_10_candles(gold, footprint=None)
@@ -136,7 +136,8 @@ def calculate_current_setup(api_key: str) -> dict:
     mother = mother_candle_breakout(gold)
     trend = short_term_technical_trend(gold)
 
-        # V9.4 test: the last 10 completed M15 candles are the sole direction engine.
+    # V9.4 SELL-only mode:
+    # the last 10 completed M15 candles remain the sole direction engine.
     # Other modules remain diagnostic only and cannot create or veto direction.
     print("V9.4 10-CANDLE POWER")
     print(f"BUY power: {power.buy_power * 100:.0f}%")
@@ -144,7 +145,7 @@ def calculate_current_setup(api_key: str) -> dict:
     print(f"Pressure acceleration: {power.pressure_acceleration * 100:+.0f}%")
     print(f"10-candle signal: {power.signal}")
 
-        if power.signal == "SELL":
+    if power.signal == "SELL":
         side = "SELL"
         basis = "10-candle power"
     else:
@@ -162,7 +163,7 @@ def calculate_current_setup(api_key: str) -> dict:
         "structure_reason": "no directional setup",
     }
 
-    if side not in {"BUY", "SELL"}:
+    if side != "SELL":
         return result
 
     entry = current_gold_price
@@ -188,17 +189,16 @@ def calculate_current_setup(api_key: str) -> dict:
         result["structure_reason"] = "Invalid stop-loss distance"
         return result
 
-    if side == "BUY":
-        take_profit = entry + (MIN_RR * stop_distance)
-    else:
-        take_profit = entry - (MIN_RR * stop_distance)
+    take_profit = entry - (MIN_RR * stop_distance)
 
     result["entry_reference"] = entry
     result["threshold"] = entry
     result["stop_loss"] = stop_loss
     result["take_profit"] = take_profit
     result["reward_risk"] = MIN_RR
-    result["structure_reason"] = "10-candle power + mandatory structure/ATR SL + 2R TP"
+    result["structure_reason"] = (
+        "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
+    )
 
     return result
   
