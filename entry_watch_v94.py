@@ -64,7 +64,7 @@ def save_state(state: dict) -> None:
         json.dumps(state, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-   def load_journal() -> list:
+def load_journal() -> list:
         if not JOURNAL_FILE.exists():
             return []
         try:
