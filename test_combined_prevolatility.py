@@ -18,7 +18,10 @@ CYPRUS_TZ = ZoneInfo("Europe/Nicosia")
 WINDOWS = 3
 SAMPLES_PER_WINDOW = 20
 INTERVAL_SECONDS = 1
-
+STANDARD_ATR_MULTIPLIER = 1.50
+BUILDING_ATR_MULTIPLIER = 1.75
+HIGH_ATR_MULTIPLIER = 2.00
+EXTREME_ATR_MULTIPLIER = 2.25
 
 VERY_HIGH_GOLD_EVENTS = [
     "cpi",
@@ -426,15 +429,19 @@ else:
 
 if combined_state == "NORMAL":
     sl_regime = "STANDARD"
+    atr_multiplier = STANDARD_ATR_MULTIPLIER
 
 elif combined_state == "BUILDING":
     sl_regime = "MODERATELY WIDER"
+    atr_multiplier = BUILDING_ATR_MULTIPLIER
 
 elif combined_state == "HIGH":
     sl_regime = "WIDER"
+    atr_multiplier = HIGH_ATR_MULTIPLIER
 
 else:
     sl_regime = "EXTREME / REVIEW ENTRY"
+    atr_multiplier = EXTREME_ATR_MULTIPLIER
 
 
 # ---------------------------------
@@ -514,7 +521,10 @@ print(
     f"SL/TP REGIME: "
     f"{sl_regime}"
 )
-
+print(
+    f"ATR MULTIPLIER: "
+    f"{atr_multiplier:.2f}x"
+)
 print(
     "====================================="
 )
