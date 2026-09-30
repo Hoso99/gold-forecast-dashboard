@@ -243,7 +243,7 @@ atr14 = float(plan.get("atr", np.nan))
 atr_buffer = STOP_ATR_MULTIPLE * atr14
 stop_distance_detail = abs(entry - stop_loss)
 
-    if not np.isfinite(stop_loss):
+if not np.isfinite(stop_loss):
         result["structure_reason"] = "No valid structure/ATR stop loss"
         return result
 
@@ -260,10 +260,10 @@ stop_distance_detail = abs(entry - stop_loss)
     result["stop_loss"] = stop_loss
     result["take_profit"] = take_profit
     result["reward_risk"] = MIN_RR
-result["swing_high"] = swing_high
-result["atr14"] = atr14
-result["atr_buffer"] = atr_buffer
-result["stop_distance"] = stop_distance_detail
+    result["swing_high"] = swing_high
+    result["atr14"] = atr14
+    result["atr_buffer"] = atr_buffer
+    result["stop_distance"] = stop_distance_detail
     result["structure_reason"] = (
         "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
     )
