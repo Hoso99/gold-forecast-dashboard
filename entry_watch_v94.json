@@ -1,9 +1,9 @@
 {
   "basis": "10-candle power below directional threshold",
-  "buy_power": 0.531849,
-  "entry_reference": 4178.1132,
-  "model_time": "2026-09-30T04:15:00+00:00",
-  "sell_power": 0.468151,
+  "buy_power": 0.571859,
+  "entry_reference": 4182.2273,
+  "model_time": "2026-09-30T04:30:00+00:00",
+  "sell_power": 0.428141,
   "side": "WAIT",
   "structure_reason": "no directional setup",
   "threshold": null
