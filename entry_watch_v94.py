@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +37,9 @@ M15_BARS = 1200
 M5_BARS = 200
 COST_BPS = 10
 STOP_ATR_MULTIPLE = 1.5
+BUILDING_ATR_MULTIPLE = 1.75
+HIGH_ATR_MULTIPLE = 2.00
+EXTREME_ATR_MULTIPLE = 2.25
 MIN_RR = 2.0
 SWING_LOOKBACK = 48
 
@@ -177,9 +183,312 @@ def _reversal_snapshot(api_key: str) -> dict:
         }
     except Exception:
         return {"current_signal": 0, "status": "UNAVAILABLE"}
+
+BIQUOTE_PRICE_URL = "https://biquote.io/api/XAUUSD"
+
+BIQUOTE_CALENDAR_URL = (
+    "https://biquote.io/api/calendar/upcoming"
+    "?countries=US"
+    "&importance=high"
+    "&limit=20"
+)
+
+VERY_HIGH_GOLD_EVENTS = [
+    "cpi",
+    "core cpi",
+    "nonfarm payroll",
+    "unemployment rate",
+    "fomc",
+    "federal reserve",
+    "fed interest rate",
+    "interest rate decision",
+    "powell",
+    "pce",
+]
+
+HIGH_GOLD_EVENTS = [
+    "initial jobless claims",
+    "ism manufacturing",
+    "ism non-manufacturing",
+    "services pmi",
+    "manufacturing pmi",
+    "crude oil stocks",
+    "retail sales",
+    "gdp",
+]
+
+def _biquote_fetch_quote() -> dict:
+    with urllib.request.urlopen(
+        BIQUOTE_PRICE_URL,
+        timeout=10,
+    ) as response:
+        data = json.loads(
+            response.read().decode("utf-8")
+        )
+
+    return {
+        "mid": float(data["mid"]),
+        "spread": float(data["spread"]),
+        "timestamp": data.get("timestamp"),
+    }
+
+def _biquote_analyse_quotes(quotes: list[dict]) -> dict:
+    moves = [
+        current["mid"] - previous["mid"]
+        for previous, current in zip(quotes, quotes[1:])
+    ]
+
+    up_moves = [move for move in moves if move > 0]
+    down_moves = [abs(move) for move in moves if move < 0]
+
+    buy_magnitude = sum(up_moves)
+    sell_magnitude = sum(down_moves)
+    total_magnitude = buy_magnitude + sell_magnitude
+
+    if total_magnitude > 0:
+        buy_pressure = 100 * buy_magnitude / total_magnitude
+        sell_pressure = 100 * sell_magnitude / total_magnitude
+    else:
+        buy_pressure = 0.0
+        sell_pressure = 0.0
+
+    velocity = (
+        total_magnitude / len(moves)
+        if moves else 0.0
+    )
+
+    return {
+        "buy_pressure": buy_pressure,
+        "sell_pressure": sell_pressure,
+        "velocity": velocity,
+    }
+
+def _biquote_market_state() -> dict:
+    windows = []
+
+    for _ in range(3):
+        quotes = []
+
+        for sample in range(20):
+            try:
+                quotes.append(_biquote_fetch_quote())
+            except Exception as exc:
+                print(
+                    f"Biquote quote error: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+            if sample < 19:
+                time.sleep(1)
+
+        if len(quotes) < 6:
+            raise RuntimeError(
+                "Not enough Biquote quotes"
+            )
+
+        windows.append(
+            _biquote_analyse_quotes(quotes)
+        )
+
+    velocities = [
+        window["velocity"]
+        for window in windows
+    ]
+
+    first_velocity = velocities[0]
+    last_velocity = velocities[-1]
+
+    if first_velocity > 0:
+        velocity_change = (
+            (last_velocity - first_velocity)
+            / first_velocity
+        ) * 100
+    else:
+        velocity_change = 0.0
+
+    rising_windows = sum(
+        1
+        for previous, current
+        in zip(velocities, velocities[1:])
+        if current > previous
+    )
+
+    if (
+        rising_windows == 2
+        and velocity_change >= 50
+    ):
+        state = "HIGH BUILDUP"
+
+    elif (
+        rising_windows >= 1
+        and velocity_change >= 20
+    ):
+        state = "BUILDING"
+
+    elif velocity_change <= -20:
+        state = "COOLING"
+
+    else:
+        state = "NORMAL"
+
+    latest = windows[-1]
+
+    return {
+        "state": state,
+        "velocity_change": velocity_change,
+        "buy_pressure": latest["buy_pressure"],
+        "sell_pressure": latest["sell_pressure"],
+    }
+
+def _biquote_gold_relevance(name: str) -> str:
+    text = name.lower()
+
+    if any(
+        keyword in text
+        for keyword in VERY_HIGH_GOLD_EVENTS
+    ):
+        return "VERY HIGH"
+
+    if any(
+        keyword in text
+        for keyword in HIGH_GOLD_EVENTS
+    ):
+        return "HIGH"
+
+    return "MODERATE"
+
+def _biquote_event_risk(minutes: float, relevance: str) -> str:
+    if relevance == "VERY HIGH":
+        if minutes <= 30:
+            return "IMMINENT"
+        if minutes <= 120:
+            return "HIGH"
+        if minutes <= 360:
+            return "WATCH"
+
+    if relevance == "HIGH":
+        if minutes <= 15:
+            return "IMMINENT"
+        if minutes <= 60:
+            return "HIGH"
+        if minutes <= 180:
+            return "WATCH"
+
+    return "NORMAL"
+
+def _biquote_calendar_state() -> dict:
+    with urllib.request.urlopen(
+        BIQUOTE_CALENDAR_URL,
+        timeout=15,
+    ) as response:
+        events = json.loads(
+            response.read().decode("utf-8")
+        )
+
+    now_utc = datetime.now(timezone.utc)
+
+    risk_rank = {
+        "NORMAL": 0,
+        "WATCH": 1,
+        "HIGH": 2,
+        "IMMINENT": 3,
+    }
+
+    overall_risk = "NORMAL"
+    nearest_event = None
+
+    for event in events:
+        time_text = event.get("time")
+
+        if not time_text:
+            continue
+
+        event_time = datetime.fromisoformat(
+            time_text.replace("Z", "+00:00")
+        )
+
+        minutes = (
+            event_time - now_utc
+        ).total_seconds() / 60
+
+        if minutes < 0:
+            continue
+
+        relevance = _biquote_gold_relevance(
+            event.get("name", "")
+        )
+
+        risk = _biquote_event_risk(
+            minutes,
+            relevance,
+        )
+
+        if risk_rank[risk] > risk_rank[overall_risk]:
+            overall_risk = risk
+
+        if (
+            relevance in ("VERY HIGH", "HIGH")
+            and (
+                nearest_event is None
+                or minutes < nearest_event["minutes"]
+            )
+        ):
+            nearest_event = {
+                "name": event.get("name", "Unknown"),
+                "minutes": minutes,
+                "relevance": relevance,
+                "risk": risk,
+            }
+
+    return {
+        "risk": overall_risk,
+        "nearest_event": nearest_event,
+    }
+
+
 def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
+        try:
+        biquote_market = _biquote_market_state()
+        biquote_calendar = _biquote_calendar_state()
+
+        print("BIQUOTE PRE-VOLATILITY")
+        print(
+            f"Market state: "
+            f"{biquote_market['state']}"
+        )
+        print(
+            f"Velocity change: "
+            f"{biquote_market['velocity_change']:+.2f}%"
+        )
+        print(
+            f"Biquote SELL pressure: "
+            f"{biquote_market['sell_pressure']:.2f}%"
+        )
+        print(
+            f"Event risk: "
+            f"{biquote_calendar['risk']}"
+        )
+
+    except Exception as exc:
+        print(
+            f"Biquote unavailable: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+        biquote_market = {
+            "state": "NORMAL",
+            "velocity_change": 0.0,
+            "buy_pressure": 0.0,
+            "sell_pressure": 0.0,
+        }
+
+        biquote_calendar = {
+            "risk": "NORMAL",
+            "nearest_event": None,
+        }
+
 
     
     print(f"Latest M15 candle used: {gold.index[-1]}")
@@ -226,11 +535,47 @@ def calculate_current_setup(api_key: str) -> dict:
 
     entry = current_gold_price(api_key)
     print(f"Fresh XAU/USD SELL entry price: {entry:.2f}")
+    market_score = {
+        "COOLING": 0,
+        "NORMAL": 0,
+        "BUILDING": 1,
+        "HIGH BUILDUP": 2,
+    }.get(biquote_market["state"], 0)
 
+    event_score = {
+        "NORMAL": 0,
+        "WATCH": 1,
+        "HIGH": 2,
+        "IMMINENT": 3,
+    }.get(biquote_calendar["risk"], 0)
+
+    prevolatility_score = market_score + event_score
+
+    if prevolatility_score >= 4:
+        prevolatility_state = "EXTREME"
+        adaptive_atr_multiple = EXTREME_ATR_MULTIPLE
+    elif prevolatility_score >= 3:
+        prevolatility_state = "HIGH"
+        adaptive_atr_multiple = HIGH_ATR_MULTIPLE
+    elif prevolatility_score >= 2:
+        prevolatility_state = "BUILDING"
+        adaptive_atr_multiple = BUILDING_ATR_MULTIPLE
+    else:
+        prevolatility_state = "NORMAL"
+        adaptive_atr_multiple = STOP_ATR_MULTIPLE
+
+    print(
+        f"Combined pre-volatility: "
+        f"{prevolatility_state}"
+    )
+    print(
+        f"Adaptive ATR multiplier: "
+        f"{adaptive_atr_multiple:.2f}x"
+    )
     plan = structure_atr_plan(
         side,
         gold,
-        atr_multiple=STOP_ATR_MULTIPLE,
+        atr_multiple=adaptive_atr_multiple,
         min_tp1_rr=MIN_RR,
         swing_lookback=SWING_LOOKBACK,
         cost_bps=COST_BPS,
@@ -240,7 +585,7 @@ def calculate_current_setup(api_key: str) -> dict:
     stop_loss = float(plan.get("stop", np.nan))
     swing_high = float(plan.get("swing", np.nan))
     atr14 = float(plan.get("atr", np.nan))
-    atr_buffer = STOP_ATR_MULTIPLE * atr14
+    atr_buffer = adaptive_atr_multiple * atr14
     stop_distance_detail = abs(entry - stop_loss)
 
     if not np.isfinite(stop_loss):
@@ -249,9 +594,9 @@ def calculate_current_setup(api_key: str) -> dict:
 
     stop_distance = abs(entry - stop_loss)
     
-    if stop_distance <= 0:
-            result["structure_reason"] = "Invalid stop-loss distance"
-            return result
+        if stop_distance <= 0:
+        result["structure_reason"] = "Invalid stop-loss distance"
+        return result
     
     take_profit = entry - (MIN_RR * stop_distance)
     
@@ -264,9 +609,16 @@ def calculate_current_setup(api_key: str) -> dict:
     result["atr14"] = atr14
     result["atr_buffer"] = atr_buffer
     result["stop_distance"] = stop_distance_detail
+    result["atr_multiple"] = adaptive_atr_multiple
+    result["prevolatility_state"] = prevolatility_state
+    result["biquote_market_state"] = biquote_market["state"]
+    result["biquote_sell_pressure"] = biquote_market["sell_pressure"]
+    result["biquote_velocity_change"] = biquote_market["velocity_change"]
+    result["biquote_event_risk"] = biquote_calendar["risk"]
+    result["biquote_nearest_event"] = biquote_calendar["nearest_event"]
     result["structure_reason"] = (
             "10-candle SELL power + mandatory structure/ATR SL + 2R TP"
-        )
+    )
 
     return result
   
@@ -348,8 +700,13 @@ def check_once() -> str:
                 "SL DETAILS\n"
                 f"Confirmed swing high: USD {setup['swing_high']:,.2f}\n"
                 f"ATR14: USD {setup['atr14']:,.2f}\n"
-                f"ATR buffer (1.5x): USD {setup['atr_buffer']:,.2f}\n"
+                f"ATR buffer ({setup['atr_multiple']:.2f}x): USD {setup['atr_buffer']:,.2f}\n"
                 f"Stop distance: USD {setup['stop_distance']:,.2f}\n\n"
+                f"Pre-volatility: {setup['prevolatility_state']}\n"
+                f"Biquote market: {setup['biquote_market_state']}\n"
+                f"Biquote SELL pressure: {setup['biquote_sell_pressure']:.2f}%\n"
+                f"Velocity change: {setup['biquote_velocity_change']:+.2f}%\n"
+                f"Event risk: {setup['biquote_event_risk']}\n\n"
                 f"SELL power: {setup['sell_power'] * 100:.2f}%\n"
                 f"Basis: {setup['basis']}\n"
                 "Mandatory SL + TP >=2R confirmed.\n"
