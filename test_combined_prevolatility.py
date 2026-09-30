@@ -290,19 +290,13 @@ else:
 latest_market = window_results[-1]
 
 if (
-    latest_market["buy_pressure"]
-    >= 60
-):
-    directional_bias = "BUY"
-
-elif (
     latest_market["sell_pressure"]
     >= 60
 ):
     directional_bias = "SELL"
 
 else:
-    directional_bias = "MIXED"
+    directional_bias = "WAIT"
 
 
 # ---------------------------------
