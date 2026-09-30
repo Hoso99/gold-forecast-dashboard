@@ -17,7 +17,7 @@ from candle_power_v94 import analyze_last_10_candles
 from early_sell_v94 import detect_early_sell
 from four_module_v94 import evaluate_four_modules
 from free_gold_perpetuals_v90 import collect_free_perpetual_consensus
-from gold_model import _download_symbol, expected_market_open
+from gold_model import _download_symbol, expected_market_open, current_gold_price
 from gold_model_v90 import (
     five_minute_reversal_states,
     mother_candle_breakout,
@@ -118,12 +118,7 @@ def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
 
-    live_gold = _download_symbol(
-        api_key, "XAU/USD", 2, interval="1min"
-    )
-    current_gold_price = float(live_gold.close.iloc[-1])
-
-    print(f"Current XAU/USD price: {current_gold_price:.2f}")
+    
     print(f"Latest M15 candle used: {gold.index[-1]}")
 
     # GitHub has no live Streamlit-uploaded footprint. The V9.4 candle engine
@@ -166,7 +161,8 @@ def calculate_current_setup(api_key: str) -> dict:
     if side != "SELL":
         return result
 
-    entry = current_gold_price
+    entry = current_gold_price(api_key)
+print(f"Fresh XAU/USD SELL entry price: {entry:.2f}")
 
     plan = structure_atr_plan(
         side,
