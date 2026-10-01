@@ -518,7 +518,7 @@ def calculate_current_setup(api_key: str) -> dict:
             index=False
         )
     )
-        sell_diagnostic = diagnose_sell_quality(power)
+    sell_diagnostic = diagnose_sell_quality(power)
 
     print("V9.4 SELL QUALITY DIAGNOSTIC")
     print(
