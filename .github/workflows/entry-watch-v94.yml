@@ -21,7 +21,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      - name: Synchronize with latest main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -46,6 +49,5 @@ jobs:
             echo "No watcher state changes to persist."
           else
             git commit -m "Update V9.4 watcher state"
-            git pull --rebase origin main
-            git push
+            git push origin HEAD:main
           fi
