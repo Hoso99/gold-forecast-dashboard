@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from candle_power_v94 import analyze_last_10_candles
+from candle_power_v94 import analyze_last_10_candles, diagnose_sell_quality
 from early_sell_v94 import detect_early_sell
 from four_module_v94 import evaluate_four_modules
 from free_gold_perpetuals_v90 import collect_free_perpetual_consensus
@@ -517,6 +517,34 @@ def calculate_current_setup(api_key: str) -> dict:
         power.rows.to_string(
             index=False
         )
+    )
+        sell_diagnostic = diagnose_sell_quality(power)
+
+    print("V9.4 SELL QUALITY DIAGNOSTIC")
+    print(
+        f"Status: "
+        f"{sell_diagnostic['status']}"
+    )
+    print(
+        f"Checks passed: "
+        f"{sell_diagnostic['checks_passed']}/"
+        f"{sell_diagnostic['checks_total']}"
+    )
+    print(
+        f"SELL candles: "
+        f"{sell_diagnostic['sell_count_10']}/10"
+    )
+    print(
+        f"Recent 5 SELL: "
+        f"{sell_diagnostic['sell_count_5']}/5"
+    )
+    print(
+        f"Latest 2 SELL: "
+        f"{sell_diagnostic['sell_count_2']}/2"
+    )
+    print(
+        f"Failed checks: "
+        f"{sell_diagnostic['reasons']}"
     )
     early_sell = detect_early_sell(gold)
     perpetual = collect_free_perpetual_consensus()
