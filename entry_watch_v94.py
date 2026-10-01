@@ -731,12 +731,12 @@ def check_once() -> str:
                 "No active entry. No order was submitted."
             )
 
-        delivery = send_telegram_alert(
+    delivery = send_telegram_alert(
             _secret("TELEGRAM_BOT_TOKEN"),
             _secret("TELEGRAM_CHAT_ID"),
             message,
         )
-        if delivery.status == "SENT":
+    if delivery.status == "SENT":
             state["last_alert_key"] = alert_key
             state["last_alert_price"] = round(current_price, 4)
             if active:
@@ -755,8 +755,8 @@ def check_once() -> str:
                 })
                 save_journal(journal)
     
-        save_state(state)
-        return f"{delivery.status}: {delivery.detail}"
+    save_state(state)
+    return f"{delivery.status}: {delivery.detail}"
 
     save_state(state)
     return (
