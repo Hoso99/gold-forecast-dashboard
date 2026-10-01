@@ -80,8 +80,8 @@ weights = np.arange(1, bars + 1, dtype=float)
 weights /= weights.sum()
 candle_score = _clip(np.dot(raw.to_numpy(), weights))
 
-    fp_score = 0.0
-    fp_used = False
+fp_score = 0.0
+fp_used = False
 
     if footprint is not None:
         fp_signal = str(getattr(footprint, "ten_bar_signal", "NONE")).upper()
