@@ -688,8 +688,17 @@ def check_once() -> str:
                 (side == "SELL" and take_profit < current_price < stop_loss)
             )
         )
+    nearest_event = setup.get("biquote_nearest_event")
 
-        if active:
+    if nearest_event:
+        nearest_event_text = (
+            f"Nearest event: {nearest_event['name']}\n"
+            f"Event relevance: {nearest_event['relevance']}\n"
+            f"Event in: {nearest_event['minutes']:.0f} minutes\n"
+        )
+    else:
+        nearest_event_text = "Nearest event: None\n"
+    if active:
             message = (
                 "Gold Version 9.4 — ACTIVE ENTRY\n"
                 f"DIRECTION: {side}\n"
@@ -707,6 +716,7 @@ def check_once() -> str:
                 f"Biquote SELL pressure: {setup['biquote_sell_pressure']:.2f}%\n"
                 f"Velocity change: {setup['biquote_velocity_change']:+.2f}%\n"
                 f"Event risk: {setup['biquote_event_risk']}\n\n"
+                f"{nearest_event_text}\n"
                 f"SELL power: {setup['sell_power'] * 100:.2f}%\n"
                 f"Basis: {setup['basis']}\n"
                 "Mandatory SL + TP >=2R confirmed.\n"
