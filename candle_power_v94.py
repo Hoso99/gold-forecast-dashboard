@@ -90,54 +90,54 @@ if footprint is not None:
     if fp_signal in {"BUY", "SELL"} and np.isfinite(candidate) and abs(candidate) >= 0.05:
         fp_score = _clip(candidate)
         fp_used = True
-    # Candle power remains dominant. Footprint confirms at 30% when available.
-    net = _clip(.70 * candle_score + .30 * fp_score) if fp_used else candle_score
-    buy_power = float((net + 1) / 2)
-    sell_power = float(1 - buy_power)
-    buy_advantage = buy_power - sell_power
-    sell_advantage = sell_power - buy_power
-    pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
-    accel_boost = 0.10 * pressure_acceleration
-    directional_net = _clip(net + accel_boost)
-    directional_buy_power = float((directional_net + 1) / 2)
-    directional_sell_power = float(1 - directional_buy_power)
-    directional_buy_advantage = directional_buy_power - directional_sell_power
-    directional_sell_advantage = directional_sell_power - directional_buy_power                            
-    if directional_sell_power >= sell_threshold and directional_sell_advantage >= sell_lead:
-        signal = "SELL"
-    elif directional_buy_power >= buy_threshold and directional_buy_advantage >= buy_lead:
-        signal = "BUY"
-    else:
-        signal = "WAIT"
-    direction = np.where(raw > .10, "BUY", np.where(raw < -.10, "SELL", "NEUTRAL"))
-    out = pd.DataFrame({
-        "Candle": frame.index,
-        "Open": o.values, "High": h.values, "Low": l.values, "Close": c.values,
-        "Body pressure": body.values,
-        "Close-location pressure": close_location.values,
-        "ATR impulse": impulse.values,
-        "Power score": raw.values,
-        "Direction": direction,
-        "Recency weight": weights,
-    })
-    bullish = int((raw > .10).sum()); bearish = int((raw < -.10).sum())
-    neutral = bars - bullish - bearish
-    recent_momentum = _clip(raw.iloc[-3:].mean() - raw.iloc[:3].mean())
-    # Compare newer five candles with older five. Negative = selling accelerating.
-    pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
-                              
-    # Affirmative evidence only: neutral candles contribute to neither side.
-    bearish_evidence = float(np.average(np.maximum(-raw.to_numpy(), 0), weights=weights))
-    bullish_evidence = float(np.average(np.maximum(raw.to_numpy(), 0), weights=weights))
-    detail = (
-        f"Last {bars} completed candles: buying power {buy_power:.1%}, "
-        f"selling power {sell_power:.1%}. Candle structure has priority"
-        + (" with 30% footprint confirmation." if fp_used else ".")
-        + " SELL uses the intentionally more sensitive threshold."
-    )
-    return CandlePowerV94(signal, "READY", buy_power, sell_power, net,
-                          candle_score, fp_score, fp_used, bullish, bearish,
-                          neutral, recent_momentum, pressure_acceleration, bearish_evidence, bullish_evidence, out, detail)
+        # Candle power remains dominant. Footprint confirms at 30% when available.
+        net = _clip(.70 * candle_score + .30 * fp_score) if fp_used else candle_score
+        buy_power = float((net + 1) / 2)
+        sell_power = float(1 - buy_power)
+        buy_advantage = buy_power - sell_power
+        sell_advantage = sell_power - buy_power
+        pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
+        accel_boost = 0.10 * pressure_acceleration
+        directional_net = _clip(net + accel_boost)
+        directional_buy_power = float((directional_net + 1) / 2)
+        directional_sell_power = float(1 - directional_buy_power)
+        directional_buy_advantage = directional_buy_power - directional_sell_power
+        directional_sell_advantage = directional_sell_power - directional_buy_power                            
+        if directional_sell_power >= sell_threshold and directional_sell_advantage >= sell_lead:
+            signal = "SELL"
+        elif directional_buy_power >= buy_threshold and directional_buy_advantage >= buy_lead:
+            signal = "BUY"
+        else:
+            signal = "WAIT"
+        direction = np.where(raw > .10, "BUY", np.where(raw < -.10, "SELL", "NEUTRAL"))
+        out = pd.DataFrame({
+            "Candle": frame.index,
+            "Open": o.values, "High": h.values, "Low": l.values, "Close": c.values,
+            "Body pressure": body.values,
+            "Close-location pressure": close_location.values,
+            "ATR impulse": impulse.values,
+            "Power score": raw.values,
+            "Direction": direction,
+            "Recency weight": weights,
+        })
+        bullish = int((raw > .10).sum()); bearish = int((raw < -.10).sum())
+        neutral = bars - bullish - bearish
+        recent_momentum = _clip(raw.iloc[-3:].mean() - raw.iloc[:3].mean())
+        # Compare newer five candles with older five. Negative = selling accelerating.
+        pressure_acceleration = _clip(raw.iloc[-5:].mean() - raw.iloc[:5].mean())
+                                  
+        # Affirmative evidence only: neutral candles contribute to neither side.
+        bearish_evidence = float(np.average(np.maximum(-raw.to_numpy(), 0), weights=weights))
+        bullish_evidence = float(np.average(np.maximum(raw.to_numpy(), 0), weights=weights))
+        detail = (
+            f"Last {bars} completed candles: buying power {buy_power:.1%}, "
+            f"selling power {sell_power:.1%}. Candle structure has priority"
+            + (" with 30% footprint confirmation." if fp_used else ".")
+            + " SELL uses the intentionally more sensitive threshold."
+        )
+        return CandlePowerV94(signal, "READY", buy_power, sell_power, net,
+                              candle_score, fp_score, fp_used, bullish, bearish,
+                              neutral, recent_momentum, pressure_acceleration, bearish_evidence, bullish_evidence, out, detail)
 
 
 def validate_power_signal(power, *, event_lock=False, shock_active=False,
