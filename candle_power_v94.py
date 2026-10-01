@@ -82,9 +82,11 @@ candle_score = _clip(np.dot(raw.to_numpy(), weights))
 
     fp_score = 0.0
     fp_used = False
+
     if footprint is not None:
         fp_signal = str(getattr(footprint, "ten_bar_signal", "NONE")).upper()
         candidate = float(getattr(footprint, "ten_bar_score", 0.0) or 0.0)
+
         if fp_signal in {"BUY", "SELL"} and np.isfinite(candidate) and abs(candidate) >= 0.05:
             fp_score = _clip(candidate)
             fp_used = True
