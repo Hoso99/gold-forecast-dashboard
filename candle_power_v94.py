@@ -347,3 +347,94 @@ def validate_power_signal(power, *, event_lock=False, shock_active=False,
         "reasons": reasons,
         "validated": confirmed,
     }
+def diagnose_sell_quality(power) -> dict:
+    """Observation-only diagnostic for a 10-candle SELL signal."""
+
+    rows = power.rows
+
+    if rows is None or rows.empty:
+        return {
+            "status": "UNAVAILABLE",
+            "score": 0,
+            "checks_passed": 0,
+            "checks_total": 0,
+            "reasons": ["No 10-candle diagnostic rows available."],
+        }
+
+    recent5 = rows.tail(5)
+    recent3 = rows.tail(3)
+    recent2 = rows.tail(2)
+
+    sell_count_10 = int(
+        (rows["Direction"] == "SELL").sum()
+    )
+    sell_count_5 = int(
+        (recent5["Direction"] == "SELL").sum()
+    )
+    sell_count_2 = int(
+        (recent2["Direction"] == "SELL").sum()
+    )
+
+    recent_body = float(
+        recent3["Body pressure"].mean()
+    )
+    recent_close = float(
+        recent3["Close-location pressure"].mean()
+    )
+    recent_wick = float(
+        recent3["Wick pressure"].mean()
+    )
+    recent_impulse = float(
+        recent3["ATR impulse"].mean()
+    )
+    recent_power = float(
+        recent3["Power score"].mean()
+    )
+
+    checks = {
+        "sell_breadth": sell_count_10 >= 6,
+        "recent_persistence": sell_count_5 >= 3,
+        "latest_persistence": sell_count_2 == 2,
+        "bearish_body": recent_body < 0,
+        "bearish_close": recent_close < 0,
+        "bearish_impulse": recent_impulse < 0,
+        "bearish_recent_power": recent_power < 0,
+        "no_strong_lower_wick_rejection": recent_wick <= 0.20,
+        "sell_acceleration": power.pressure_acceleration <= 0,
+    }
+
+    passed = sum(bool(value) for value in checks.values())
+    total = len(checks)
+
+    if passed >= 8:
+        status = "CONFIRMED"
+    elif passed >= 5:
+        status = "MIXED"
+    else:
+        status = "REJECTED"
+
+    reasons = [
+        name
+        for name, value in checks.items()
+        if not value
+    ]
+
+    return {
+        "status": status,
+        "score": passed / total,
+        "checks_passed": passed,
+        "checks_total": total,
+        "sell_count_10": sell_count_10,
+        "sell_count_5": sell_count_5,
+        "sell_count_2": sell_count_2,
+        "recent_body": recent_body,
+        "recent_close": recent_close,
+        "recent_wick": recent_wick,
+        "recent_impulse": recent_impulse,
+        "recent_power": recent_power,
+        "pressure_acceleration": float(
+            power.pressure_acceleration
+        ),
+        "checks": checks,
+        "reasons": reasons,
+    }
