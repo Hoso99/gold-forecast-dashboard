@@ -55,6 +55,12 @@ def analyze_last_10_candles(gold, footprint=None, bars=10,
     rng = (h - l).replace(0, np.nan)
     body = ((c - o) / rng).fillna(0).clip(-1, 1)
     close_location = (((c - l) / rng) * 2 - 1).fillna(0).clip(-1, 1)
+    upper_wick = (h - np.maximum(o, c)) / rng
+lower_wick = (np.minimum(o, c) - l) / rng
+
+wick_pressure = (
+    lower_wick - upper_wick
+).fillna(0).clip(-1, 1)
     prev = gold.close.astype(float).shift(1).reindex(frame.index)
     tr = pd.concat([(h-l), (h-prev).abs(), (l-prev).abs()], axis=1).max(axis=1)
     atr = pd.concat([
@@ -63,8 +69,13 @@ def analyze_last_10_candles(gold, footprint=None, bars=10,
         (gold.low.astype(float)-gold.close.astype(float).shift(1)).abs()
     ], axis=1).max(axis=1).rolling(14, min_periods=14).mean().reindex(frame.index)
     impulse = ((c - prev) / atr.replace(0, np.nan)).fillna(0).clip(-1, 1)
-    # Candle structure is primary: body 50%, close location 30%, ATR impulse 20%.
-    raw = (.50 * body + .30 * close_location + .20 * impulse).clip(-1, 1)
+    # Enhanced candle structure: body 40%, close 25%, wick rejection 20%, ATR impulse 15%.
+raw = (
+    .40 * body
+    + .25 * close_location
+    + .20 * wick_pressure
+    + .15 * impulse
+).clip(-1, 1)
     weights = np.arange(1, bars + 1, dtype=float)
     weights /= weights.sum()
     candle_score = _clip(np.dot(raw.to_numpy(), weights))
