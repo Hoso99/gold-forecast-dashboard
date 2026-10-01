@@ -76,9 +76,9 @@ raw = (
     + .20 * wick_pressure
     + .15 * impulse
 ).clip(-1, 1)
-    weights = np.arange(1, bars + 1, dtype=float)
-    weights /= weights.sum()
-    candle_score = _clip(np.dot(raw.to_numpy(), weights))
+weights = np.arange(1, bars + 1, dtype=float)
+weights /= weights.sum()
+candle_score = _clip(np.dot(raw.to_numpy(), weights))
 
     fp_score = 0.0
     fp_used = False
