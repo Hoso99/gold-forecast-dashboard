@@ -512,6 +512,12 @@ def calculate_current_setup(api_key: str) -> dict:
     # GitHub has no live Streamlit-uploaded footprint. The V9.4 candle engine
     # explicitly supports footprint=None; candle pressure remains the primary input.
     power = analyze_last_10_candles(gold, footprint=None)
+    print("V9.4 10-CANDLE DIAGNOSTIC")
+    print(
+        power.rows.to_string(
+            index=False
+        )
+    )
     early_sell = detect_early_sell(gold)
     perpetual = collect_free_perpetual_consensus()
 
