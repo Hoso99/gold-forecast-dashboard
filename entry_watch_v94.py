@@ -470,7 +470,23 @@ def calculate_current_setup(api_key: str) -> dict:
             f"Event risk: "
             f"{biquote_calendar['risk']}"
         )
+        nearest_event = biquote_calendar.get("nearest_event")
 
+        if nearest_event:
+            print(
+                f"Nearest event: "
+                f"{nearest_event['name']}"
+            )
+            print(
+                f"Event relevance: "
+                f"{nearest_event['relevance']}"
+            )
+            print(
+                f"Event in: "
+                f"{nearest_event['minutes']:.0f} minutes"
+            )
+        else:
+            print("Nearest event: None")
     except Exception as exc:
         print(
             f"Biquote unavailable: "
