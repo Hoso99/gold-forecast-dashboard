@@ -83,13 +83,13 @@ candle_score = _clip(np.dot(raw.to_numpy(), weights))
 fp_score = 0.0
 fp_used = False
 
-    if footprint is not None:
-        fp_signal = str(getattr(footprint, "ten_bar_signal", "NONE")).upper()
-        candidate = float(getattr(footprint, "ten_bar_score", 0.0) or 0.0)
+if footprint is not None:
+    fp_signal = str(getattr(footprint, "ten_bar_signal", "NONE")).upper()
+    candidate = float(getattr(footprint, "ten_bar_score", 0.0) or 0.0)
 
-        if fp_signal in {"BUY", "SELL"} and np.isfinite(candidate) and abs(candidate) >= 0.05:
-            fp_score = _clip(candidate)
-            fp_used = True
+    if fp_signal in {"BUY", "SELL"} and np.isfinite(candidate) and abs(candidate) >= 0.05:
+        fp_score = _clip(candidate)
+        fp_used = True
     # Candle power remains dominant. Footprint confirms at 30% when available.
     net = _clip(.70 * candle_score + .30 * fp_score) if fp_used else candle_score
     buy_power = float((net + 1) / 2)
