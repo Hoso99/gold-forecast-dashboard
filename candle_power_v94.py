@@ -61,7 +61,7 @@ lower_wick = (np.minimum(o, c) - l) / rng
 wick_pressure = (
     lower_wick - upper_wick
 ).fillna(0).clip(-1, 1)
-    prev = gold.close.astype(float).shift(1).reindex(frame.index)
+prev = gold.close.astype(float).shift(1).reindex(frame.index)
     tr = pd.concat([(h-l), (h-prev).abs(), (l-prev).abs()], axis=1).max(axis=1)
     atr = pd.concat([
         gold.high.astype(float)-gold.low.astype(float),
