@@ -62,13 +62,13 @@ wick_pressure = (
     lower_wick - upper_wick
 ).fillna(0).clip(-1, 1)
 prev = gold.close.astype(float).shift(1).reindex(frame.index)
-    tr = pd.concat([(h-l), (h-prev).abs(), (l-prev).abs()], axis=1).max(axis=1)
-    atr = pd.concat([
+tr = pd.concat([(h-l), (h-prev).abs(), (l-prev).abs()], axis=1).max(axis=1)
+atr = pd.concat([
         gold.high.astype(float)-gold.low.astype(float),
         (gold.high.astype(float)-gold.close.astype(float).shift(1)).abs(),
         (gold.low.astype(float)-gold.close.astype(float).shift(1)).abs()
-    ], axis=1).max(axis=1).rolling(14, min_periods=14).mean().reindex(frame.index)
-    impulse = ((c - prev) / atr.replace(0, np.nan)).fillna(0).clip(-1, 1)
+], axis=1).max(axis=1).rolling(14, min_periods=14).mean().reindex(frame.index)
+impulse = ((c - prev) / atr.replace(0, np.nan)).fillna(0).clip(-1, 1)
     # Enhanced candle structure: body 40%, close 25%, wick rejection 20%, ATR impulse 15%.
 raw = (
     .40 * body
