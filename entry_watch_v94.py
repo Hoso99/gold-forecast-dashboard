@@ -722,7 +722,7 @@ def check_once() -> str:
                 "Mandatory SL + TP >=2R confirmed.\n"
                 "Research alert only. No order was submitted."
             )
-        else:
+    else:
             message = (
                 "Gold Version 9.4 — ENTRY BLOCKED\n"
                 f"DIRECTION: {side}\n"
