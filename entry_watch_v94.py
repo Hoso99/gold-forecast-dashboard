@@ -545,7 +545,31 @@ def calculate_current_setup(api_key: str) -> dict:
         "threshold": None,
         "structure_reason": "no directional setup",
     }
+    # Hard event-risk gate:
+    # Keep the 10-candle signal for diagnostics, but do not
+    # permit a new active entry while event risk is IMMINENT.
+    if (
+        side == "SELL"
+        and biquote_calendar["risk"] == "IMMINENT"
+    ):
+        result["side"] = "WAIT"
+        result["basis"] = (
+            "SELL signal blocked: imminent economic event"
+        )
+        result["structure_reason"] = (
+            "ENTRY BLOCKED — event risk IMMINENT"
+        )
 
+        print(
+            "ENTRY BLOCKED: "
+            "IMMINENT ECONOMIC EVENT"
+        )
+        print(
+            f"Raw 10-candle SELL power: "
+            f"{power.sell_power * 100:.2f}%"
+        )
+
+        return result
     if side != "SELL":
         return result
 
