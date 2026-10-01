@@ -449,7 +449,7 @@ def _biquote_calendar_state() -> dict:
 def calculate_current_setup(api_key: str) -> dict:
     """Rebuild the V9.4 directional hierarchy and its valid-entry threshold."""
     gold = _fresh_gold(api_key)
-        try:
+    try:
         biquote_market = _biquote_market_state()
         biquote_calendar = _biquote_calendar_state()
 
@@ -594,7 +594,7 @@ def calculate_current_setup(api_key: str) -> dict:
 
     stop_distance = abs(entry - stop_loss)
     
-        if stop_distance <= 0:
+    if stop_distance <= 0:
         result["structure_reason"] = "Invalid stop-loss distance"
         return result
     
