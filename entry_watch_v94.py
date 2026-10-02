@@ -563,22 +563,22 @@ def calculate_current_setup(api_key: str) -> dict:
     print(f"10-candle signal: {power.signal}")
 
     if (
-    power.signal == "SELL"
-    and sell_diagnostic["status"] == "CONFIRMED"
-):
-    side = "SELL"
-    basis = "10-candle SELL + quality CONFIRMED"
+        power.signal == "SELL"
+        and sell_diagnostic["status"] == "CONFIRMED"
+    ):
+        side = "SELL"
+        basis = "10-candle SELL + quality CONFIRMED"
 
-elif power.signal == "SELL":
-    side = "WAIT"
-    basis = (
-        "10-candle SELL blocked: "
-        f"quality {sell_diagnostic['status']}"
-    )
+    elif power.signal == "SELL":
+        side = "WAIT"
+        basis = (
+            "10-candle SELL blocked: "
+            f"quality {sell_diagnostic['status']}"
+        )
 
-else:
-    side = "WAIT"
-    basis = "SELL-only mode: no SELL signal"
+    else:
+        side = "WAIT"
+        basis = "SELL-only mode: no SELL signal"
 
     result = {
         "side": side,
