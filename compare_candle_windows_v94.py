@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-
+import json
+from urllib.parse import urlencode
+from urllib.request import urlopen
 import numpy as np
 import pandas as pd
 
 from candle_power_v94 import analyze_last_10_candles
-from gold_model import _download_symbol
+
 from structure_risk_v94 import structure_atr_plan
 
 
@@ -29,7 +31,7 @@ COST_BPS = 10
 OUTPUT_FILE = Path("candle_window_comparison_v94.csv")
 SUMMARY_FILE = Path("candle_window_summary_v94.csv")
 def download_historical_batches(api_key: str) -> pd.DataFrame:
-    """Download M15 history in batches and combine it."""
+    """Download older XAU/USD M15 history in 5000-candle batches."""
     batches = []
     remaining = M15_BARS
     end_date = None
@@ -37,18 +39,62 @@ def download_historical_batches(api_key: str) -> pd.DataFrame:
     while remaining > 0:
         size = min(BATCH_SIZE, remaining)
 
-        data = _download_symbol(
-            api_key,
-            "XAU/USD",
-            size,
-            interval="15min",
-            end_date=end_date,
-        )
+        params = {
+            "symbol": "XAU/USD",
+            "interval": "15min",
+            "outputsize": size,
+            "timezone": "UTC",
+            "format": "JSON",
+            "apikey": api_key,
+        }
 
-        if data is None or data.empty:
+        if end_date is not None:
+            params["end_date"] = end_date.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+        query = urlencode(params)
+
+        with urlopen(
+            f"https://api.twelvedata.com/time_series?{query}",
+            timeout=30,
+        ) as response:
+            payload = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        if payload.get("status") == "error":
+            raise RuntimeError(
+                f"Twelve Data error: {payload.get('message')}"
+            )
+
+        values = payload.get("values")
+
+        if not values:
             break
 
-        data = data.sort_index()
+        data = pd.DataFrame(values)
+
+        data["datetime"] = pd.to_datetime(
+            data["datetime"],
+            utc=True,
+            errors="coerce",
+        )
+
+        for column in ["open", "high", "low", "close"]:
+            data[column] = pd.to_numeric(
+                data[column],
+                errors="coerce",
+            )
+
+        data = (
+            data
+            .set_index("datetime")
+            .sort_index()
+            [["open", "high", "low", "close"]]
+            .dropna()
+        )
+
         batches.append(data)
 
         oldest = data.index[0]
@@ -58,6 +104,7 @@ def download_historical_batches(api_key: str) -> pd.DataFrame:
 
         print(
             f"Downloaded batch: {len(data)} candles; "
+            f"oldest: {oldest}; "
             f"remaining target: {remaining}"
         )
 
@@ -65,10 +112,14 @@ def download_historical_batches(api_key: str) -> pd.DataFrame:
             break
 
     if not batches:
-        raise RuntimeError("No historical candles downloaded.")
+        raise RuntimeError(
+            "No historical candles downloaded."
+        )
 
     combined = pd.concat(batches)
-    combined = combined[~combined.index.duplicated(keep="last")]
+    combined = combined[
+        ~combined.index.duplicated(keep="last")
+    ]
     combined = combined.sort_index()
 
     return combined.tail(M15_BARS)
