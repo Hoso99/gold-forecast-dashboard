@@ -222,11 +222,14 @@
     "basis": "10-candle power",
     "buy_power": 0.3903,
     "entry": 4176.935,
+    "exit_price": 4150.0278,
+    "exit_time": "2026-10-02T01:00:00+00:00",
     "model_time": "2026-10-01T20:30:00+00:00",
+    "outcome_r": 2.0,
     "reward_risk": 2.0,
     "sell_power": 0.6097,
     "side": "SELL",
-    "status": "OPEN",
+    "status": "WIN",
     "stop_loss": 4190.3885,
     "take_profit": 4150.0278
   },
@@ -265,5 +268,17 @@
     "status": "OPEN",
     "stop_loss": 4191.5388,
     "take_profit": 4054.7334
+  },
+  {
+    "basis": "10-candle power",
+    "buy_power": 0.3507,
+    "entry": 4146.9686,
+    "model_time": "2026-10-02T01:00:00+00:00",
+    "reward_risk": 2.0,
+    "sell_power": 0.6493,
+    "side": "SELL",
+    "status": "OPEN",
+    "stop_loss": 4194.0856,
+    "take_profit": 4052.7345
   }
 ]
