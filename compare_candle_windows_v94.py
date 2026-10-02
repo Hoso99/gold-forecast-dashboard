@@ -199,7 +199,7 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
 
     records = []
 
-        next_available_index = {
+    next_available_index = {
         bars: 0
         for bars in WINDOWS
     }
@@ -278,19 +278,19 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
                 "exit_time": pd.NaT,
                 "bars_to_outcome": np.nan,
             }
-                    trade_available = (
-            i >= next_available_index[bars]
-        )
 
-        independent_sell = (
-            actionable_sell
-            and trade_available
-        )
+            trade_available = (
+                i >= next_available_index[bars]
+            )
 
-        record["independent_entry"] = (
-            independent_sell
-        )
-                if independent_sell:
+            independent_sell = (
+                actionable_sell
+                and trade_available
+            )
+
+            record["independent_entry"] = independent_sell
+
+            if independent_sell:
 
                 plan = structure_atr_plan(
                     "SELL",
@@ -349,27 +349,26 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
                             record["bars_to_outcome"] = (
                                 exit_pos - i
                             )
-                next_available_index[bars] = (
-                    exit_pos + 1
-                )
+                            next_available_index[bars] = (
+                                exit_pos + 1
+                            )
+                        else:
+                            next_available_index[bars] = len(gold)
 
-            else:
-                next_available_index[bars] = len(gold)
-            else:
+                    else:
                         record["decision"] = "WAIT"
-                        record["outcome"] = (
-                            "INVALID STOP DISTANCE"
-                        )
+                        record["independent_entry"] = False
+                        record["outcome"] = "INVALID STOP DISTANCE"
 
                 else:
                     record["decision"] = "WAIT"
-                    record["outcome"] = (
-                        "NO VALID STRUCTURE STOP"
-                    )
+                    record["independent_entry"] = False
+                    record["outcome"] = "NO VALID STRUCTURE STOP"
 
             records.append(record)
 
     return pd.DataFrame(records)
+
 
 def build_summary(results: pd.DataFrame) -> pd.DataFrame:
     """Summarize performance and selectivity for each candle window."""
@@ -385,10 +384,12 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
         sells = group[
             group["decision"] == "SELL"
         ].copy()
+
         independent_sells = sells[
             sells["independent_entry"] == True
         ].copy()
-                resolved = independent_sells[
+
+        resolved = independent_sells[
             independent_sells["outcome"].isin(
                 ["WIN", "LOSS"]
             )
@@ -401,7 +402,7 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
             (resolved["outcome"] == "LOSS").sum()
         )
 
-               ambiguous = int(
+        ambiguous = int(
             (
                 independent_sells["outcome"]
                 == "AMBIGUOUS"
@@ -479,8 +480,8 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
             "hours": bars * 15 / 60,
             "total_decisions": total_decisions,
             "sell_signals": sell_signals,
-            "wait_signals": wait_signals,
             "independent_trades": independent_trades,
+            "wait_signals": wait_signals,
             "resolved_trades": len(resolved),
             "wins": wins,
             "losses": losses,
