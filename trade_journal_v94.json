@@ -241,5 +241,17 @@
     "status": "OPEN",
     "stop_loss": 4190.0711,
     "take_profit": 4111.5301
+  },
+  {
+    "basis": "10-candle power",
+    "buy_power": 0.4034,
+    "entry": 4157.8313,
+    "model_time": "2026-10-02T00:30:00+00:00",
+    "reward_risk": 2.0,
+    "sell_power": 0.5966,
+    "side": "SELL",
+    "status": "OPEN",
+    "stop_loss": 4190.8749,
+    "take_profit": 4091.744
   }
 ]
