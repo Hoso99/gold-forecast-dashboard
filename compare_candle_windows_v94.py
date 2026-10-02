@@ -19,7 +19,8 @@ from structure_risk_v94 import structure_atr_plan
 
 WINDOWS = [8, 10, 12, 15, 20]
 
-M15_BARS = 5000
+M15_BARS = 15000
+BATCH_SIZE = 5000
 SWING_LOOKBACK = 48
 STOP_ATR_MULTIPLE = 1.5
 MIN_RR = 2.0
@@ -27,7 +28,50 @@ COST_BPS = 10
 
 OUTPUT_FILE = Path("candle_window_comparison_v94.csv")
 SUMMARY_FILE = Path("candle_window_summary_v94.csv")
+def download_historical_batches(api_key: str) -> pd.DataFrame:
+    """Download M15 history in batches and combine it."""
+    batches = []
+    remaining = M15_BARS
+    end_date = None
 
+    while remaining > 0:
+        size = min(BATCH_SIZE, remaining)
+
+        data = _download_symbol(
+            api_key,
+            "XAU/USD",
+            size,
+            interval="15min",
+            end_date=end_date,
+        )
+
+        if data is None or data.empty:
+            break
+
+        data = data.sort_index()
+        batches.append(data)
+
+        oldest = data.index[0]
+        end_date = oldest - pd.Timedelta(minutes=15)
+
+        remaining -= len(data)
+
+        print(
+            f"Downloaded batch: {len(data)} candles; "
+            f"remaining target: {remaining}"
+        )
+
+        if len(data) < size:
+            break
+
+    if not batches:
+        raise RuntimeError("No historical candles downloaded.")
+
+    combined = pd.concat(batches)
+    combined = combined[~combined.index.duplicated(keep="last")]
+    combined = combined.sort_index()
+
+    return combined.tail(M15_BARS)
 
 def proportional_sell_breadth(bars: int) -> int:
     """V9.4 uses 6/10 SELL candles = 60% breadth."""
@@ -514,12 +558,7 @@ def main():
 
     print("\nDownloading historical XAU/USD M15 data...")
 
-    gold = _download_symbol(
-        api_key,
-        "XAU/USD",
-        M15_BARS,
-        interval="15min",
-    )
+    gold = download_historical_batches(api_key)
 
     gold = gold.sort_index().copy()
 
