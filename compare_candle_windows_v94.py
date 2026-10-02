@@ -19,7 +19,7 @@ from structure_risk_v94 import structure_atr_plan
 
 WINDOWS = [8, 10, 12, 15, 20]
 
-M15_BARS = 10000
+M15_BARS = 5000
 SWING_LOOKBACK = 48
 STOP_ATR_MULTIPLE = 1.5
 MIN_RR = 2.0
