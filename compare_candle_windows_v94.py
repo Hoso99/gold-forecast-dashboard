@@ -199,6 +199,11 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
 
     records = []
 
+        next_available_index = {
+        bars: 0
+        for bars in WINDOWS
+    }
+
     warmup = max(
         SWING_LOOKBACK + 20,
         max(WINDOWS) + 20,
@@ -273,8 +278,19 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
                 "exit_time": pd.NaT,
                 "bars_to_outcome": np.nan,
             }
+                    trade_available = (
+            i >= next_available_index[bars]
+        )
 
-            if actionable_sell:
+        independent_sell = (
+            actionable_sell
+            and trade_available
+        )
+
+        record["independent_entry"] = (
+            independent_sell
+        )
+                if independent_sell:
 
                 plan = structure_atr_plan(
                     "SELL",
@@ -333,8 +349,13 @@ def run_historical_comparison(gold: pd.DataFrame) -> pd.DataFrame:
                             record["bars_to_outcome"] = (
                                 exit_pos - i
                             )
+                next_available_index[bars] = (
+                    exit_pos + 1
+                )
 
-                    else:
+            else:
+                next_available_index[bars] = len(gold)
+            else:
                         record["decision"] = "WAIT"
                         record["outcome"] = (
                             "INVALID STOP DISTANCE"
@@ -364,9 +385,13 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
         sells = group[
             group["decision"] == "SELL"
         ].copy()
-
-        resolved = sells[
-            sells["outcome"].isin(["WIN", "LOSS"])
+        independent_sells = sells[
+            sells["independent_entry"] == True
+        ].copy()
+                resolved = independent_sells[
+            independent_sells["outcome"].isin(
+                ["WIN", "LOSS"]
+            )
         ].copy()
 
         wins = int(
@@ -376,16 +401,23 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
             (resolved["outcome"] == "LOSS").sum()
         )
 
-        ambiguous = int(
-            (sells["outcome"] == "AMBIGUOUS").sum()
+               ambiguous = int(
+            (
+                independent_sells["outcome"]
+                == "AMBIGUOUS"
+            ).sum()
         )
 
         open_trades = int(
-            (sells["outcome"] == "OPEN").sum()
+            (
+                independent_sells["outcome"]
+                == "OPEN"
+            ).sum()
         )
 
         total_decisions = len(group)
         sell_signals = len(sells)
+        independent_trades = len(independent_sells)
         wait_signals = int(
             (group["decision"] == "WAIT").sum()
         )
@@ -448,6 +480,7 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
             "total_decisions": total_decisions,
             "sell_signals": sell_signals,
             "wait_signals": wait_signals,
+            "independent_trades": independent_trades,
             "resolved_trades": len(resolved),
             "wins": wins,
             "losses": losses,
