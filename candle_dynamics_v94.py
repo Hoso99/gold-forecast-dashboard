@@ -331,10 +331,10 @@ def main():
     index=False,
 )
 
-print("\nSELL COMBINATION RESEARCH")
-print(sell_combinations.head(30).to_string(index=False))
-print("\nDETAILED INTRACANDLE SUMMARY")
-print(dynamics_summary.to_string(index=False))
+    print("\nSELL COMBINATION RESEARCH")
+    print(sell_combinations.head(30).to_string(index=False))
+    print("\nDETAILED INTRACANDLE SUMMARY")
+    print(dynamics_summary.to_string(index=False))
 
     print("\nINTRACANDLE PATH SUMMARY")
     print(path_summary.to_string(index=False))
