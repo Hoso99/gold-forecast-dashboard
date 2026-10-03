@@ -324,8 +324,7 @@ def main():
     detailed.to_csv("candle_dynamics_detailed_v94.csv", index=False)
     dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
     path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
-    sell_combinations = analyze_sell_combinations(d)
-
+    sell_combinations = analyze_sell_combinations(detailed)
     sell_combinations.to_csv(
     "candle_dynamics_sell_combinations_v94.csv",
     index=False,
