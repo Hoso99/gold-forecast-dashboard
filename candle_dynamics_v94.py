@@ -225,7 +225,7 @@ def main():
     detailed.to_csv("candle_dynamics_detailed_v94.csv", index=False)
     dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
     path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
-        print("\nDETAILED INTRACANDLE SUMMARY")
+    print("\nDETAILED INTRACANDLE SUMMARY")
     print(dynamics_summary.to_string(index=False))
 
     print("\nINTRACANDLE PATH SUMMARY")
