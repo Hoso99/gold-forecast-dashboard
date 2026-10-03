@@ -1,0 +1,45 @@
+name: V9.4 Candle Dynamics Research
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  candle-dynamics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pandas
+
+      - name: Run candle dynamics research
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python candle_dynamics_v94.py
+
+      - name: Persist dynamics results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add candle_dynamics_*.csv || true
+
+          if git diff --cached --quiet; then
+            echo "No dynamics result changes to commit."
+          else
+            git commit -m "Update V9.4 candle dynamics research"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
