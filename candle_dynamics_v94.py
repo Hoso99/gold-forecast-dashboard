@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-SYMBOL="XAU/USD"; M1_TARGET=int(os.getenv("DYNAMICS_M1_BARS","15000")); BATCH_SIZE=min(int(os.getenv("DYNAMICS_BATCH_SIZE","5000")),5000)
+SYMBOL="XAU/USD"; M1_TARGET=int(os.getenv("DYNAMICS_M1_BARS",""225000"")); BATCH_SIZE=min(int(os.getenv("DYNAMICS_BATCH_SIZE","5000")),5000)
 PAUSE=float(os.getenv("DYNAMICS_REQUEST_PAUSE","1")); CYPRUS=ZoneInfo("Europe/Nicosia"); FOLLOW=(15,30,60,120,240)
 OUT=Path("candle_dynamics_m15_v94.csv")
 
