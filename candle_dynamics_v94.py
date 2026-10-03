@@ -84,10 +84,151 @@ def summaries(d):
         f.append(row)
     return t,p,pd.DataFrame(f)
 
+def detailed_intracandle_analysis(d):
+    """Compare early/middle/late M15 dynamics and false-SELL behaviour."""
+
+    x = d.copy()
+
+    # Direction of each 5-minute section
+    x["phase_1_dir"] = np.sign(x["seg1_net"])
+    x["phase_2_dir"] = np.sign(x["seg2_net"])
+    x["phase_3_dir"] = np.sign(x["seg3_net"])
+
+    # Absolute movement during each section
+    x["phase_1_move"] = x["seg1_net"].abs()
+    x["phase_2_move"] = x["seg2_net"].abs()
+    x["phase_3_move"] = x["seg3_net"].abs()
+
+    # Selling acceleration toward M15 close
+    x["late_sell_acceleration"] = (
+        (-x["seg3_net"]) - (-x["seg1_net"])
+    )
+
+    # Which third contained the largest net movement
+    phase_moves = x[
+        ["phase_1_move", "phase_2_move", "phase_3_move"]
+    ]
+
+    x["dominant_phase"] = (
+        phase_moves.idxmax(axis=1)
+        .str.replace("phase_", "", regex=False)
+        .str.replace("_move", "", regex=False)
+    )
+
+    # Path classification
+    x["path_type"] = "MIXED"
+
+    x.loc[
+        (x["seg1_net"] < 0)
+        & (x["seg2_net"] < 0)
+        & (x["seg3_net"] < 0),
+        "path_type",
+    ] = "SELL_ALL_3"
+
+    x.loc[
+        (x["seg1_net"] >= 0)
+        & (x["seg2_net"] < 0)
+        & (x["seg3_net"] < 0),
+        "path_type",
+    ] = "LATE_SELL"
+
+    x.loc[
+        (x["seg1_net"] < 0)
+        & (x["seg2_net"] < 0)
+        & (x["seg3_net"] >= 0),
+        "path_type",
+    ] = "SELL_THEN_RECOVERY"
+
+    x.loc[
+        (x["seg1_net"] > 0)
+        & (x["seg2_net"] > 0)
+        & (x["seg3_net"] < 0),
+        "path_type",
+    ] = "LATE_REVERSAL_SELL"
+
+    # Successful bearish follow-through:
+    # bearish candidate whose next 60-minute return is <= 0
+    x["successful_sell_60m"] = (
+        x["bearish_candidate"]
+        & (x["forward_60m"] <= 0)
+    )
+
+    # Existing false SELL definition:
+    # bearish candidate followed by positive 60-minute return
+    x["false_sell_case"] = x["false_sell_60m"]
+
+    groups = []
+
+    for name, mask in [
+        ("ALL", pd.Series(True, index=x.index)),
+        ("SUCCESSFUL_SELL_60M", x["successful_sell_60m"]),
+        ("FALSE_SELL_60M", x["false_sell_case"]),
+    ]:
+        g = x[mask].copy()
+
+        if g.empty:
+            continue
+
+        groups.append({
+            "group": name,
+            "count": len(g),
+            "avg_seg1_net": g["seg1_net"].mean(),
+            "avg_seg2_net": g["seg2_net"].mean(),
+            "avg_seg3_net": g["seg3_net"].mean(),
+            "avg_late_sell_acceleration":
+                g["late_sell_acceleration"].mean(),
+            "avg_reversals": g["reversal_count"].mean(),
+            "avg_travel": g["travel"].mean(),
+            "avg_efficiency":
+                g["directional_efficiency"].mean(),
+            "high_first_rate":
+                (g["high_low_sequence"] == "HIGH_FIRST").mean(),
+            "low_first_rate":
+                (g["high_low_sequence"] == "LOW_FIRST").mean(),
+            "avg_forward_15m": g["forward_15m"].mean(),
+            "avg_forward_30m": g["forward_30m"].mean(),
+            "avg_forward_60m": g["forward_60m"].mean(),
+            "avg_forward_120m": g["forward_120m"].mean(),
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean(),
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
+        })
+
+    detail = pd.DataFrame(groups)
+
+    path_summary = (
+        x.groupby("path_type")
+        .agg(
+            count=("close", "size"),
+            avg_body=("body", "mean"),
+            avg_range=("range", "mean"),
+            avg_travel=("travel", "mean"),
+            avg_efficiency=("directional_efficiency", "mean"),
+            avg_reversals=("reversal_count", "mean"),
+            avg_forward_15m=("forward_15m", "mean"),
+            avg_forward_30m=("forward_30m", "mean"),
+            avg_forward_60m=("forward_60m", "mean"),
+            avg_forward_120m=("forward_120m", "mean"),
+            false_sell_rate=("false_sell_case", "mean"),
+        )
+        .reset_index()
+    )
+
+    return x, detail, path_summary
+
+
 def main():
     api=os.getenv("TWELVE_DATA_API_KEY","").strip()
     if not api: raise RuntimeError("TWELVE_DATA_API_KEY is missing")
     print("V9.4 CANDLE DYNAMICS RESEARCH")
     m1=download(api); m1.to_csv("candle_dynamics_m1_v94.csv"); d=enrich(reconstruct(m1)); d.to_csv(OUT); t,p,f=summaries(d); t.to_csv("candle_dynamics_time_summary_v94.csv",index=False); p.to_csv("candle_dynamics_pattern_summary_v94.csv",index=False); f.to_csv("candle_dynamics_followthrough_summary_v94.csv",index=False); d[d.false_sell_60m].to_csv("candle_dynamics_false_sell_v94.csv")
+    detailed, dynamics_summary, path_summary = detailed_intracandle_analysis(d)
+    detailed.to_csv("candle_dynamics_detailed_v94.csv", index=False)
+    dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
+    path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
+        print("\nDETAILED INTRACANDLE SUMMARY")
+    print(dynamics_summary.to_string(index=False))
+
+    print("\nINTRACANDLE PATH SUMMARY")
+    print(path_summary.to_string(index=False))
     print(f"Complete M15 candles reconstructed: {len(d)}"); print("\nTIME SUMMARY"); print(t.to_string(index=False)); print("\nPATTERN SUMMARY"); print(p.to_string(index=False)); print("\nFOLLOW-THROUGH + MAE/MFE"); print(f.to_string(index=False))
 if __name__=="__main__": main()
