@@ -215,7 +215,106 @@ def detailed_intracandle_analysis(d):
 
     return x, detail, path_summary
 
+def analyze_sell_combinations(d):
+    """Research combinations that separate successful from false SELL patterns."""
 
+    x = d.copy()
+
+    # Only bearish candidates are relevant to this SELL-only study.
+    x = x[x["bearish_candidate"]].copy()
+
+    # Outcome classification using the next 60 minutes.
+    x["sell_outcome"] = np.where(
+        x["forward_60m"] <= 0,
+        "SUCCESSFUL_SELL_60M",
+        "FALSE_SELL_60M",
+    )
+
+    # Efficiency buckets.
+    x["efficiency_bucket"] = pd.cut(
+        x["directional_efficiency"],
+        bins=[-np.inf, 0.10, 0.20, 0.35, np.inf],
+        labels=["VERY_LOW", "LOW", "MEDIUM", "HIGH"],
+    )
+
+    # Reversal buckets.
+    x["reversal_bucket"] = pd.cut(
+        x["reversal_count"],
+        bins=[-1, 4, 7, 10, np.inf],
+        labels=["LOW", "MEDIUM", "HIGH", "VERY_HIGH"],
+    )
+
+    # Late-selling strength.
+    x["late_sell_strength"] = pd.cut(
+        x["late_sell_acceleration"],
+        bins=[-np.inf, 0, 1, 2, np.inf],
+        labels=["NONE", "MILD", "STRONG", "VERY_STRONG"],
+    )
+
+    # High/low sequence.
+    x["sequence_type"] = x["high_low_sequence"]
+
+    group_cols = [
+        "volatility_regime",
+        "session_utc",
+        "path_type",
+        "efficiency_bucket",
+        "reversal_bucket",
+        "late_sell_strength",
+        "sequence_type",
+    ]
+
+    rows = []
+
+    for keys, g in x.groupby(
+        group_cols,
+        observed=True,
+        dropna=False,
+    ):
+        if len(g) < 10:
+            continue
+
+        successful = (
+            g["sell_outcome"] == "SUCCESSFUL_SELL_60M"
+        ).sum()
+
+        false = (
+            g["sell_outcome"] == "FALSE_SELL_60M"
+        ).sum()
+
+        rows.append({
+            "volatility_regime": keys[0],
+            "session_utc": keys[1],
+            "path_type": keys[2],
+            "efficiency_bucket": keys[3],
+            "reversal_bucket": keys[4],
+            "late_sell_strength": keys[5],
+            "sequence_type": keys[6],
+            "samples": len(g),
+            "successful_sell_60m": int(successful),
+            "false_sell_60m": int(false),
+            "success_rate_60m": successful / len(g),
+            "avg_forward_15m": g["forward_15m"].mean(),
+            "avg_forward_30m": g["forward_30m"].mean(),
+            "avg_forward_60m": g["forward_60m"].mean(),
+            "avg_forward_120m": g["forward_120m"].mean(),
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean(),
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
+            "avg_efficiency": g["directional_efficiency"].mean(),
+            "avg_reversals": g["reversal_count"].mean(),
+            "avg_late_sell_acceleration":
+                g["late_sell_acceleration"].mean(),
+        })
+
+    result = pd.DataFrame(rows)
+
+    if result.empty:
+        return result
+
+    return result.sort_values(
+        ["success_rate_60m", "samples"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
 def main():
     api=os.getenv("TWELVE_DATA_API_KEY","").strip()
     if not api: raise RuntimeError("TWELVE_DATA_API_KEY is missing")
@@ -225,6 +324,15 @@ def main():
     detailed.to_csv("candle_dynamics_detailed_v94.csv", index=False)
     dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
     path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
+    sell_combinations = analyze_sell_combinations(d)
+
+    sell_combinations.to_csv(
+    "candle_dynamics_sell_combinations_v94.csv",
+    index=False,
+)
+
+print("\nSELL COMBINATION RESEARCH")
+print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
     print(dynamics_summary.to_string(index=False))
 
