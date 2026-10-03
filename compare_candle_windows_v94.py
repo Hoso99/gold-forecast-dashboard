@@ -593,7 +593,96 @@ def build_summary(results: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(summaries)
+def build_period_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """Break independent SELL results down by calendar month."""
+    data = results.copy()
 
+    data["model_time"] = pd.to_datetime(
+        data["model_time"],
+        utc=True,
+        errors="coerce",
+    )
+
+    data["period"] = data["model_time"].dt.strftime("%Y-%m")
+
+    rows = []
+
+    for bars in WINDOWS:
+        window_data = data[
+            data["window"] == bars
+        ].copy()
+
+        periods = sorted(
+            window_data["period"].dropna().unique()
+        )
+
+        for period in periods:
+            group = window_data[
+                window_data["period"] == period
+            ].copy()
+
+            trades = group[
+                (group["decision"] == "SELL")
+                & (group["independent_entry"] == True)
+            ].copy()
+
+            resolved = trades[
+                trades["outcome"].isin(["WIN", "LOSS"])
+            ].copy()
+
+            wins = int(
+                (resolved["outcome"] == "WIN").sum()
+            )
+            losses = int(
+                (resolved["outcome"] == "LOSS").sum()
+            )
+
+            total_r = (
+                float(resolved["outcome_r"].sum())
+                if len(resolved)
+                else 0.0
+            )
+
+            win_rate = (
+                wins / len(resolved)
+                if len(resolved)
+                else np.nan
+            )
+
+            expectancy_r = (
+                float(resolved["outcome_r"].mean())
+                if len(resolved)
+                else np.nan
+            )
+
+            equity = (
+                resolved["outcome_r"]
+                .fillna(0.0)
+                .cumsum()
+            )
+
+            if len(equity):
+                peak = equity.cummax()
+                drawdown = equity - peak
+                max_drawdown_r = float(drawdown.min())
+            else:
+                max_drawdown_r = 0.0
+
+            rows.append({
+                "period": period,
+                "window": bars,
+                "hours": bars * 15 / 60,
+                "independent_trades": len(trades),
+                "resolved_trades": len(resolved),
+                "wins": wins,
+                "losses": losses,
+                "win_rate": win_rate,
+                "total_r": total_r,
+                "expectancy_r": expectancy_r,
+                "max_drawdown_r": max_drawdown_r,
+            })
+
+    return pd.DataFrame(rows)
 def main():
     api_key = str(
         __import__("os").environ.get(
@@ -631,6 +720,7 @@ def main():
     results = run_historical_comparison(gold)
 
     summary = build_summary(results)
+    period_summary = build_period_summary(results)
 
     results.to_csv(
         OUTPUT_FILE,
@@ -641,7 +731,10 @@ def main():
         SUMMARY_FILE,
         index=False,
     )
-
+    period_summary.to_csv(
+    "candle_window_period_summary_v94.csv",
+    index=False,
+    )
     print("\nCOMPARISON COMPLETE")
     print(
         f"Detailed journal: {OUTPUT_FILE}"
@@ -656,7 +749,12 @@ def main():
             index=False
         )
     )
-
+    print("\nPERIOD SUMMARY")
+    print(
+    period_summary.to_string(
+        index=False
+    )
+    )
 
 if __name__ == "__main__":
     main()
