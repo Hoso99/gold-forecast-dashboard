@@ -712,6 +712,117 @@ def compare_three_filter_components(d, train_fraction=0.70):
             rows.append(row)
     return pd.DataFrame(rows)
 
+
+def optimize_persistence_filter(d, train_fraction=0.70):
+    """Out-of-sample research focused only on bearish persistence.
+
+    Tests simple persistence definitions and strength thresholds on the same
+    discovery/validation split. No live V9.4 files or thresholds are changed.
+    """
+    x = d.copy().sort_index()
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame(), pd.DataFrame()
+
+    discovery = x.iloc[:split_i - purge].copy()
+    validation = x.iloc[split_i:].copy()
+
+    # Persistence families.  SEG2_SEG3 is the current strongest component.
+    # Strength uses the combined bearish net move of the late two segments.
+    def add_features(frame):
+        b = frame[frame["bearish_candidate"]].copy()
+        b["late_two_net"] = b["seg2_net"] + b["seg3_net"]
+        b["late_two_bearish_strength"] = -b["late_two_net"]
+        return b
+
+    disc = add_features(discovery)
+    val = add_features(validation)
+
+    # Fixed, interpretable candidate rules. Thresholds are learned/ranked only
+    # on discovery; validation is reported separately.
+    candidates = []
+    for mode in ("SEG3", "SEG2_SEG3"):
+        for strength_min in (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0):
+            candidates.append((mode, strength_min))
+
+    def mask_for(b, mode, strength_min):
+        if mode == "SEG3":
+            m = b["seg3_net"] < 0
+        else:
+            m = (b["seg2_net"] < 0) & (b["seg3_net"] < 0)
+        if strength_min > 0:
+            m &= b["late_two_bearish_strength"] >= strength_min
+        return m
+
+    discovery_rows=[]
+    for mode, strength_min in candidates:
+        g=disc[mask_for(disc, mode, strength_min)].copy()
+        row={
+            "persistence_mode": mode,
+            "strength_min": strength_min,
+            "bearish_candidates": len(disc),
+            "signals": len(g),
+            "signals_kept_pct": 100.0*len(g)/len(disc) if len(disc) else np.nan,
+            "avg_late_two_bearish_strength": g["late_two_bearish_strength"].mean() if len(g) else np.nan,
+            "avg_efficiency": g["directional_efficiency"].mean() if len(g) else np.nan,
+            "avg_reversals": g["reversal_count"].mean() if len(g) else np.nan,
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean() if len(g) else np.nan,
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean() if len(g) else np.nan,
+        }
+        for minutes in (15,30,60,120):
+            col=f"forward_{minutes}m"
+            row[f"success_rate_{minutes}m"]=(g[col] <= 0).mean() if len(g) else np.nan
+            row[f"avg_forward_{minutes}m"]=g[col].mean() if len(g) else np.nan
+        # Balanced continuation score; 60m receives the largest weight.
+        row["discovery_score"]=(
+            0.20*row["success_rate_15m"] +
+            0.25*row["success_rate_30m"] +
+            0.40*row["success_rate_60m"] +
+            0.15*row["success_rate_120m"]
+        ) if len(g) else np.nan
+        discovery_rows.append(row)
+
+    ranked=pd.DataFrame(discovery_rows)
+    # Avoid selecting tiny samples. Keep rules with >=5% of bearish candidates
+    # and at least 50 discovery signals, then rank by discovery score.
+    eligible=ranked[(ranked["signals"] >= 50) & (ranked["signals_kept_pct"] >= 5.0)].copy()
+    eligible=eligible.sort_values(["discovery_score","signals"], ascending=[False,False])
+
+    validation_rows=[]
+    for rank, (_, rule) in enumerate(eligible.head(12).iterrows(), start=1):
+        g=val[mask_for(val, rule["persistence_mode"], float(rule["strength_min"]))].copy()
+        out={
+            "discovery_rank": rank,
+            "persistence_mode": rule["persistence_mode"],
+            "strength_min": rule["strength_min"],
+            "discovery_signals": int(rule["signals"]),
+            "discovery_kept_pct": rule["signals_kept_pct"],
+            "discovery_score": rule["discovery_score"],
+            "validation_candidates": len(val),
+            "validation_signals": len(g),
+            "validation_kept_pct": 100.0*len(g)/len(val) if len(val) else np.nan,
+            "validation_avg_late_two_bearish_strength": g["late_two_bearish_strength"].mean() if len(g) else np.nan,
+            "validation_avg_sell_mfe_60m": g["sell_mfe_60m"].mean() if len(g) else np.nan,
+            "validation_avg_sell_mae_60m": g["sell_mae_60m"].mean() if len(g) else np.nan,
+        }
+        for minutes in (15,30,60,120):
+            col=f"forward_{minutes}m"
+            out[f"discovery_success_{minutes}m"]=rule[f"success_rate_{minutes}m"]
+            out[f"validation_success_{minutes}m"]=(g[col] <= 0).mean() if len(g) else np.nan
+            out[f"validation_avg_forward_{minutes}m"]=g[col].mean() if len(g) else np.nan
+        out["validation_score"]=(
+            0.20*out["validation_success_15m"] +
+            0.25*out["validation_success_30m"] +
+            0.40*out["validation_success_60m"] +
+            0.15*out["validation_success_120m"]
+        ) if len(g) else np.nan
+        out["score_change"]=out["validation_score"]-out["discovery_score"] if len(g) else np.nan
+        validation_rows.append(out)
+
+    return ranked, pd.DataFrame(validation_rows)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -784,6 +895,16 @@ def main():
         index=False,
     )
 
+    persistence_search, persistence_validation = optimize_persistence_filter(detailed)
+    persistence_search.to_csv(
+        "candle_dynamics_persistence_search_v94.csv",
+        index=False,
+    )
+    persistence_validation.to_csv(
+        "candle_dynamics_persistence_validation_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -799,6 +920,10 @@ def main():
     print(simple_rule_validation.to_string(index=False))
     print("\nTHREE-FILTER COMPONENT ABLATION — DISCOVERY VS VALIDATION")
     print(component_comparison.to_string(index=False))
+    print("\nPERSISTENCE FILTER SEARCH — DISCOVERY")
+    print(persistence_search.to_string(index=False))
+    print("\nPERSISTENCE FILTER — OUT-OF-SAMPLE VALIDATION TOP 12")
+    print(persistence_validation.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
