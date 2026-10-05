@@ -1,2 +1,2 @@
 rule,total_complete_m15,discovery_candles,purged_candles,validation_candles,discovery_start,discovery_end,validation_start,validation_end,train_fraction
-EFF>=0.10 + REV<=4 + SEG2&SEG3 bearish,14991,10485,8,4498,2026-05-02 12:15:00+00:00,2026-08-19 17:15:00+00:00,2026-08-19 19:30:00+00:00,2026-10-05 18:00:00+00:00,0.7
+EFF>=0.10 + REV<=4 + SEG2&SEG3 bearish,14991,10485,8,4498,2026-05-02 12:30:00+00:00,2026-08-19 17:30:00+00:00,2026-08-19 19:45:00+00:00,2026-10-05 18:15:00+00:00,0.7
