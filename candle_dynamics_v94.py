@@ -379,6 +379,52 @@ def compare_sell_filters(d):
         })
     return pd.DataFrame(rows)
 
+
+def compare_directional_efficiency_thresholds(d):
+    """Research directional-efficiency thresholds without changing live V9.4."""
+    x = d.copy()
+    x = x[x["bearish_candidate"]].copy()
+    x["success"] = x["forward_60m"] <= 0
+
+    # Keep the same prerequisite used by the current best research filter.
+    x = x[
+        (x["seg3_net"] < 0)
+        & (x["late_sell_acceleration"] > 0)
+    ].copy()
+
+    thresholds = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
+    rows = []
+    base_count = len(x)
+    base_success = int(x["success"].sum())
+
+    for threshold in thresholds:
+        g = x[x["directional_efficiency"] >= threshold].copy()
+        if g.empty:
+            continue
+
+        successful = int(g["success"].sum())
+        false = len(g) - successful
+        rows.append({
+            "efficiency_threshold": threshold,
+            "signals": len(g),
+            "signals_kept_pct": 100.0 * len(g) / base_count if base_count else np.nan,
+            "successful_sell_60m": successful,
+            "false_sell_60m": false,
+            "success_rate_60m": successful / len(g),
+            "good_sells_kept_pct": 100.0 * successful / base_success if base_success else np.nan,
+            "avg_forward_15m": g["forward_15m"].mean(),
+            "avg_forward_30m": g["forward_30m"].mean(),
+            "avg_forward_60m": g["forward_60m"].mean(),
+            "avg_forward_120m": g["forward_120m"].mean(),
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean(),
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
+            "avg_efficiency": g["directional_efficiency"].mean(),
+            "avg_reversals": g["reversal_count"].mean(),
+            "avg_late_sell_acceleration": g["late_sell_acceleration"].mean(),
+        })
+
+    return pd.DataFrame(rows)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -413,8 +459,16 @@ def main():
         index=False,
     )
 
+    directional_efficiency_comparison = compare_directional_efficiency_thresholds(detailed)
+    directional_efficiency_comparison.to_csv(
+        "candle_dynamics_directional_efficiency_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
+    print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
+    print(directional_efficiency_comparison.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
