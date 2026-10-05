@@ -315,48 +315,25 @@ def analyze_sell_combinations(d):
         ["success_rate_60m", "samples"],
         ascending=[False, False],
     ).reset_index(drop=True)
+
 def compare_sell_filters(d):
-    """
-    Compare progressively stricter SELL filters on the same historical M15 data.
-    Research only — does not modify live V9.4.
-    """
+    """Compare progressively stricter SELL filters on the same historical M15 data."""
     x = d.copy()
-
-    # We compare only the existing bearish-candidate population.
     x = x[x["bearish_candidate"]].copy()
-
-    # Historical outcome already defined by the research:
-    # successful SELL = price <= entry after 60 minutes.
     x["success"] = x["forward_60m"] <= 0
-
-    # BASE: existing bearish candidate.
     x["BASE"] = True
-
-    # FILTER 1:
-    # Require actual bearish follow-through inside the M15 candle.
     x["LATE_SELL"] = (
         (x["seg3_net"] < 0)
         & (x["late_sell_acceleration"] > 0)
     )
-
-    # FILTER 2:
-    # Add directional efficiency so we avoid highly mixed candles.
     x["LATE_SELL_EFFICIENT"] = (
         x["LATE_SELL"]
         & (x["directional_efficiency"] >= 0.20)
     )
-
-    # FILTER 3:
-    # Require the high to occur before the low.
-    # This tests whether the candle actually developed downward.
     x["LATE_SELL_EFFICIENT_HIGH_FIRST"] = (
         x["LATE_SELL_EFFICIENT"]
         & (x["high_low_sequence"] == "HIGH_FIRST")
     )
-
-    # FILTER 4:
-    # Stronger version requiring persistent selling in
-    # the middle and final 5-minute sections.
     x["PERSISTENT_SELL"] = (
         (x["seg2_net"] < 0)
         & (x["seg3_net"] < 0)
@@ -372,31 +349,24 @@ def compare_sell_filters(d):
         "LATE_SELL_EFFICIENT_HIGH_FIRST",
         "PERSISTENT_SELL",
     ]
-
     rows = []
-
     base_count = len(x)
     base_success = int(x["success"].sum())
 
     for name in filters:
         g = x[x[name]].copy()
-
         if g.empty:
             continue
-
         successful = int(g["success"].sum())
         false = len(g) - successful
-
         rows.append({
             "filter": name,
             "signals": len(g),
-            "signals_kept_pct": 100.0 * len(g) / base_count,
+            "signals_kept_pct": 100.0 * len(g) / base_count if base_count else np.nan,
             "successful_sell_60m": successful,
             "false_sell_60m": false,
             "success_rate_60m": successful / len(g),
-            "good_sells_kept_pct":
-                100.0 * successful / base_success
-                if base_success else np.nan,
+            "good_sells_kept_pct": 100.0 * successful / base_success if base_success else np.nan,
             "avg_forward_15m": g["forward_15m"].mean(),
             "avg_forward_30m": g["forward_30m"].mean(),
             "avg_forward_60m": g["forward_60m"].mean(),
@@ -405,41 +375,60 @@ def compare_sell_filters(d):
             "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
             "avg_efficiency": g["directional_efficiency"].mean(),
             "avg_reversals": g["reversal_count"].mean(),
-            "avg_late_sell_acceleration":
-                g["late_sell_acceleration"].mean(),
+            "avg_late_sell_acceleration": g["late_sell_acceleration"].mean(),
         })
-
     return pd.DataFrame(rows)
 
 def main():
-    api=os.getenv("TWELVE_DATA_API_KEY","").strip()
-    if not api: raise RuntimeError("TWELVE_DATA_API_KEY is missing")
+    api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
+    if not api:
+        raise RuntimeError("TWELVE_DATA_API_KEY is missing")
+
     print("V9.4 CANDLE DYNAMICS RESEARCH")
-    m1=download(api); m1.to_csv("candle_dynamics_m1_v94.csv"); d=enrich(reconstruct(m1)); d.to_csv(OUT); t,p,f=summaries(d); t.to_csv("candle_dynamics_time_summary_v94.csv",index=False); p.to_csv("candle_dynamics_pattern_summary_v94.csv",index=False); f.to_csv("candle_dynamics_followthrough_summary_v94.csv",index=False); d[d.false_sell_60m].to_csv("candle_dynamics_false_sell_v94.csv")
+    m1 = download(api)
+    m1.to_csv("candle_dynamics_m1_v94.csv")
+    d = enrich(reconstruct(m1))
+    d.to_csv(OUT)
+
+    t, p, f = summaries(d)
+    t.to_csv("candle_dynamics_time_summary_v94.csv", index=False)
+    p.to_csv("candle_dynamics_pattern_summary_v94.csv", index=False)
+    f.to_csv("candle_dynamics_followthrough_summary_v94.csv", index=False)
+    d[d.false_sell_60m].to_csv("candle_dynamics_false_sell_v94.csv")
+
     detailed, dynamics_summary, path_summary = detailed_intracandle_analysis(d)
     detailed.to_csv("candle_dynamics_detailed_v94.csv", index=False)
     dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
     path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
+
     sell_combinations = analyze_sell_combinations(detailed)
-    sell_filter_comparison = compare_sell_filters(detailed)
     sell_combinations.to_csv(
-    "candle_dynamics_sell_combinations_v94.csv",
-    index=False,
-)
+        "candle_dynamics_sell_combinations_v94.csv",
+        index=False,
+    )
+
+    sell_filter_comparison = compare_sell_filters(detailed)
     sell_filter_comparison.to_csv(
-    "candle_dynamics_sell_filter_comparison_v94.csv",
-    index=False,
-)
+        "candle_dynamics_sell_filter_comparison_v94.csv",
+        index=False,
+    )
 
-print("\nSELL FILTER COMPARISON")
-print(sell_filter_comparison.to_string(index=False))
-
+    print("\nSELL FILTER COMPARISON")
+    print(sell_filter_comparison.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
     print(dynamics_summary.to_string(index=False))
-
     print("\nINTRACANDLE PATH SUMMARY")
     print(path_summary.to_string(index=False))
-    print(f"Complete M15 candles reconstructed: {len(d)}"); print("\nTIME SUMMARY"); print(t.to_string(index=False)); print("\nPATTERN SUMMARY"); print(p.to_string(index=False)); print("\nFOLLOW-THROUGH + MAE/MFE"); print(f.to_string(index=False))
-if __name__=="__main__": main()
+    print(f"Complete M15 candles reconstructed: {len(d)}")
+    print("\nTIME SUMMARY")
+    print(t.to_string(index=False))
+    print("\nPATTERN SUMMARY")
+    print(p.to_string(index=False))
+    print("\nFOLLOW-THROUGH + MAE/MFE")
+    print(f.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
