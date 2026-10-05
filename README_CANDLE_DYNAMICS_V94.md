@@ -15,3 +15,6 @@ Copy `candle_dynamics_v94.py` and `.github/workflows/candle-dynamics-v94.yml` in
 
 ## Multi-factor SELL search
 The research script now compares combinations of directional efficiency, reversal limits, late SELL acceleration, persistence, HIGH_FIRST sequence, and volatility regime. It reports 15/30/60/120-minute SELL continuation rates, average forward movement, MFE/MAE, retained sample size, and a continuation ranking score. This is research-only and does not modify the live V9.4 entry watcher.
+
+## Out-of-sample validation
+The research now performs a chronological 70/30 discovery/validation split. The final 30% is not used to select the rules. Eight M15 candles are purged before the split to prevent the 120-minute forward outcome from leaking into validation. The top 20 discovery rules are then applied unchanged to the validation period. Outputs: `candle_dynamics_oos_metadata_v94.csv` and `candle_dynamics_oos_validation_v94.csv`.

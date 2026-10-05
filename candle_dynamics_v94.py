@@ -507,6 +507,88 @@ def multi_factor_sell_search(d):
         ascending=[False, False],
     ).reset_index(drop=True)
 
+
+def out_of_sample_multifactor_validation(d, train_fraction=0.70, top_n=20):
+    """Chronological discovery/validation for the multi-factor SELL search.
+
+    The first 70% is discovery data and the final 30% is unseen validation data.
+    Eight M15 candles (120 minutes) are purged before the split so discovery
+    outcomes cannot use prices from the validation period. Research only.
+    """
+    x = d.copy().sort_index()
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8  # 120m maximum forward horizon / 15m
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame(), pd.DataFrame()
+
+    discovery = x.iloc[:split_i - purge].copy()
+    validation = x.iloc[split_i:].copy()
+    ranked = multi_factor_sell_search(discovery)
+    if ranked.empty:
+        return ranked, pd.DataFrame()
+
+    selected = ranked.head(top_n).copy()
+    rows = []
+    base = validation[validation["bearish_candidate"]].copy()
+
+    for rank, rule in selected.reset_index(drop=True).iterrows():
+        mask = (
+            (base["directional_efficiency"] >= rule["efficiency_min"])
+            & (base["reversal_count"] <= rule["max_reversals"])
+            & (base["late_sell_acceleration"] >= rule["late_sell_accel_min"])
+            & (base["seg3_net"] < 0)
+        )
+        if rule["persistence"] == "SEG2_SEG3":
+            mask &= base["seg2_net"] < 0
+        if rule["sequence"] == "HIGH_FIRST":
+            mask &= base["high_low_sequence"] == "HIGH_FIRST"
+        if rule["volatility_regime"] != "ALL":
+            mask &= base["volatility_regime"] == rule["volatility_regime"]
+
+        g = base[mask].copy()
+        row = {
+            "discovery_rank": rank + 1,
+            "efficiency_min": rule["efficiency_min"],
+            "max_reversals": rule["max_reversals"],
+            "late_sell_accel_min": rule["late_sell_accel_min"],
+            "persistence": rule["persistence"],
+            "sequence": rule["sequence"],
+            "volatility_regime": rule["volatility_regime"],
+            "discovery_signals": int(rule["signals"]),
+            "discovery_score": rule["continuation_score"],
+            "validation_signals": len(g),
+        }
+        for minutes in (15, 30, 60, 120):
+            col = f"forward_{minutes}m"
+            row[f"discovery_success_{minutes}m"] = rule[f"success_rate_{minutes}m"]
+            row[f"validation_success_{minutes}m"] = (g[col] <= 0).mean() if len(g) else np.nan
+            row[f"validation_avg_forward_{minutes}m"] = g[col].mean() if len(g) else np.nan
+        row["validation_score"] = (
+            0.25 * row["validation_success_30m"]
+            + 0.50 * row["validation_success_60m"]
+            + 0.25 * row["validation_success_120m"]
+        ) if len(g) else np.nan
+        row["score_change"] = row["validation_score"] - row["discovery_score"] if len(g) else np.nan
+        row["validation_avg_sell_mfe_60m"] = g["sell_mfe_60m"].mean() if len(g) else np.nan
+        row["validation_avg_sell_mae_60m"] = g["sell_mae_60m"].mean() if len(g) else np.nan
+        rows.append(row)
+
+    result = pd.DataFrame(rows)
+    metadata = pd.DataFrame([{
+        "total_complete_m15": n,
+        "discovery_candles": len(discovery),
+        "purged_candles": purge,
+        "validation_candles": len(validation),
+        "discovery_start": discovery.index.min(),
+        "discovery_end": discovery.index.max(),
+        "validation_start": validation.index.min(),
+        "validation_end": validation.index.max(),
+        "train_fraction": train_fraction,
+        "top_rules_validated": min(top_n, len(ranked)),
+    }])
+    return metadata, result
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -553,12 +635,26 @@ def main():
         index=False,
     )
 
+    oos_metadata, oos_validation = out_of_sample_multifactor_validation(detailed)
+    oos_metadata.to_csv(
+        "candle_dynamics_oos_metadata_v94.csv",
+        index=False,
+    )
+    oos_validation.to_csv(
+        "candle_dynamics_oos_validation_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
     print(directional_efficiency_comparison.to_string(index=False))
     print("\nMULTI-FACTOR SELL SEARCH — TOP 30")
     print(multi_factor_comparison.head(30).to_string(index=False))
+    print("\nOUT-OF-SAMPLE SPLIT")
+    print(oos_metadata.to_string(index=False))
+    print("\nOUT-OF-SAMPLE VALIDATION — DISCOVERY TOP 20")
+    print(oos_validation.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
