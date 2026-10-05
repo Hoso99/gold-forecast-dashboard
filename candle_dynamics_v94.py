@@ -315,6 +315,102 @@ def analyze_sell_combinations(d):
         ["success_rate_60m", "samples"],
         ascending=[False, False],
     ).reset_index(drop=True)
+def compare_sell_filters(d):
+    """
+    Compare progressively stricter SELL filters on the same historical M15 data.
+    Research only — does not modify live V9.4.
+    """
+    x = d.copy()
+
+    # We compare only the existing bearish-candidate population.
+    x = x[x["bearish_candidate"]].copy()
+
+    # Historical outcome already defined by the research:
+    # successful SELL = price <= entry after 60 minutes.
+    x["success"] = x["forward_60m"] <= 0
+
+    # BASE: existing bearish candidate.
+    x["BASE"] = True
+
+    # FILTER 1:
+    # Require actual bearish follow-through inside the M15 candle.
+    x["LATE_SELL"] = (
+        (x["seg3_net"] < 0)
+        & (x["late_sell_acceleration"] > 0)
+    )
+
+    # FILTER 2:
+    # Add directional efficiency so we avoid highly mixed candles.
+    x["LATE_SELL_EFFICIENT"] = (
+        x["LATE_SELL"]
+        & (x["directional_efficiency"] >= 0.20)
+    )
+
+    # FILTER 3:
+    # Require the high to occur before the low.
+    # This tests whether the candle actually developed downward.
+    x["LATE_SELL_EFFICIENT_HIGH_FIRST"] = (
+        x["LATE_SELL_EFFICIENT"]
+        & (x["high_low_sequence"] == "HIGH_FIRST")
+    )
+
+    # FILTER 4:
+    # Stronger version requiring persistent selling in
+    # the middle and final 5-minute sections.
+    x["PERSISTENT_SELL"] = (
+        (x["seg2_net"] < 0)
+        & (x["seg3_net"] < 0)
+        & (x["late_sell_acceleration"] > 0)
+        & (x["directional_efficiency"] >= 0.20)
+        & (x["high_low_sequence"] == "HIGH_FIRST")
+    )
+
+    filters = [
+        "BASE",
+        "LATE_SELL",
+        "LATE_SELL_EFFICIENT",
+        "LATE_SELL_EFFICIENT_HIGH_FIRST",
+        "PERSISTENT_SELL",
+    ]
+
+    rows = []
+
+    base_count = len(x)
+    base_success = int(x["success"].sum())
+
+    for name in filters:
+        g = x[x[name]].copy()
+
+        if g.empty:
+            continue
+
+        successful = int(g["success"].sum())
+        false = len(g) - successful
+
+        rows.append({
+            "filter": name,
+            "signals": len(g),
+            "signals_kept_pct": 100.0 * len(g) / base_count,
+            "successful_sell_60m": successful,
+            "false_sell_60m": false,
+            "success_rate_60m": successful / len(g),
+            "good_sells_kept_pct":
+                100.0 * successful / base_success
+                if base_success else np.nan,
+            "avg_forward_15m": g["forward_15m"].mean(),
+            "avg_forward_30m": g["forward_30m"].mean(),
+            "avg_forward_60m": g["forward_60m"].mean(),
+            "avg_forward_120m": g["forward_120m"].mean(),
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean(),
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
+            "avg_efficiency": g["directional_efficiency"].mean(),
+            "avg_reversals": g["reversal_count"].mean(),
+            "avg_late_sell_acceleration":
+                g["late_sell_acceleration"].mean(),
+        })
+
+    return pd.DataFrame(rows)
+
 def main():
     api=os.getenv("TWELVE_DATA_API_KEY","").strip()
     if not api: raise RuntimeError("TWELVE_DATA_API_KEY is missing")
@@ -325,10 +421,18 @@ def main():
     dynamics_summary.to_csv("candle_dynamics_intracandle_summary_v94.csv", index=False)
     path_summary.to_csv("candle_dynamics_path_summary_v94.csv", index=False)
     sell_combinations = analyze_sell_combinations(detailed)
+    sell_filter_comparison = compare_sell_filters(detailed)
     sell_combinations.to_csv(
     "candle_dynamics_sell_combinations_v94.csv",
     index=False,
 )
+    sell_filter_comparison.to_csv(
+    "candle_dynamics_sell_filter_comparison_v94.csv",
+    index=False,
+)
+
+print("\nSELL FILTER COMPARISON")
+print(sell_filter_comparison.to_string(index=False))
 
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
