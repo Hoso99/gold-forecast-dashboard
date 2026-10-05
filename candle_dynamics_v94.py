@@ -425,6 +425,88 @@ def compare_directional_efficiency_thresholds(d):
 
     return pd.DataFrame(rows)
 
+
+def multi_factor_sell_search(d):
+    """Grid-search SELL confirmation combinations on historical M15 research data.
+
+    Research only.  The live V9.4 decision engine is not modified.
+    Negative forward returns are favourable for a SELL.
+    """
+    x = d.copy()
+    x = x[x["bearish_candidate"]].copy()
+
+    efficiency_thresholds = [0.10, 0.20, 0.30, 0.35, 0.40]
+    reversal_limits = [4, 6, 8, 10, 12]
+    acceleration_thresholds = [0.0, 1.0, 2.0, 3.0, 4.0]
+    persistence_modes = ["SEG3", "SEG2_SEG3"]
+    sequence_modes = ["ANY", "HIGH_FIRST"]
+    regime_modes = ["ALL", "QUIET", "NORMAL", "HIGH"]
+
+    rows = []
+    base_count = len(x)
+
+    for eff in efficiency_thresholds:
+        for max_rev in reversal_limits:
+            for accel in acceleration_thresholds:
+                for persistence in persistence_modes:
+                    for sequence in sequence_modes:
+                        for regime in regime_modes:
+                            mask = (
+                                (x["directional_efficiency"] >= eff)
+                                & (x["reversal_count"] <= max_rev)
+                                & (x["late_sell_acceleration"] >= accel)
+                                & (x["seg3_net"] < 0)
+                            )
+                            if persistence == "SEG2_SEG3":
+                                mask &= x["seg2_net"] < 0
+                            if sequence == "HIGH_FIRST":
+                                mask &= x["high_low_sequence"] == "HIGH_FIRST"
+                            if regime != "ALL":
+                                mask &= x["volatility_regime"] == regime
+
+                            g = x[mask].copy()
+                            n = len(g)
+                            if n < 50:
+                                continue
+
+                            row = {
+                                "efficiency_min": eff,
+                                "max_reversals": max_rev,
+                                "late_sell_accel_min": accel,
+                                "persistence": persistence,
+                                "sequence": sequence,
+                                "volatility_regime": regime,
+                                "signals": n,
+                                "signals_kept_pct": 100.0 * n / base_count if base_count else np.nan,
+                                "avg_efficiency": g["directional_efficiency"].mean(),
+                                "avg_reversals": g["reversal_count"].mean(),
+                                "avg_late_sell_acceleration": g["late_sell_acceleration"].mean(),
+                                "avg_sell_mfe_60m": g["sell_mfe_60m"].mean(),
+                                "avg_sell_mae_60m": g["sell_mae_60m"].mean(),
+                            }
+                            for minutes in (15, 30, 60, 120):
+                                col = f"forward_{minutes}m"
+                                row[f"success_rate_{minutes}m"] = (g[col] <= 0).mean()
+                                row[f"avg_forward_{minutes}m"] = g[col].mean()
+
+                            # A ranking aid, not a trading rule: reward consistent SELL
+                            # continuation at 30/60/120m while requiring a useful sample.
+                            row["continuation_score"] = (
+                                0.25 * row["success_rate_30m"]
+                                + 0.50 * row["success_rate_60m"]
+                                + 0.25 * row["success_rate_120m"]
+                            )
+                            rows.append(row)
+
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+
+    return result.sort_values(
+        ["continuation_score", "signals"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -465,10 +547,18 @@ def main():
         index=False,
     )
 
+    multi_factor_comparison = multi_factor_sell_search(detailed)
+    multi_factor_comparison.to_csv(
+        "candle_dynamics_multifactor_search_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
     print(directional_efficiency_comparison.to_string(index=False))
+    print("\nMULTI-FACTOR SELL SEARCH — TOP 30")
+    print(multi_factor_comparison.head(30).to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")

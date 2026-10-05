@@ -12,3 +12,6 @@ Default is 15,000 M1 candles. This is NOT the same span as 15,000 M15 candles. R
 
 ## Install
 Copy `candle_dynamics_v94.py` and `.github/workflows/candle-dynamics-v94.yml` into the repository, preserving paths. The existing `TWELVE_DATA_API_KEY` GitHub secret is used. Then manually run **V9.4 Candle Dynamics Research** in Actions.
+
+## Multi-factor SELL search
+The research script now compares combinations of directional efficiency, reversal limits, late SELL acceleration, persistence, HIGH_FIRST sequence, and volatility regime. It reports 15/30/60/120-minute SELL continuation rates, average forward movement, MFE/MAE, retained sample size, and a continuation ranking score. This is research-only and does not modify the live V9.4 entry watcher.
