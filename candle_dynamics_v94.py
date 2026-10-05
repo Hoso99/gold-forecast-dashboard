@@ -662,6 +662,56 @@ def validate_simple_three_filter_rule(d, train_fraction=0.70):
     }])
     return metadata, pd.DataFrame(rows)
 
+
+def compare_three_filter_components(d, train_fraction=0.70):
+    """Ablation test for the three fixed SELL filters on the same OOS split.
+
+    This does not search new thresholds. It compares BASE, each single filter,
+    each pair, and the original 3-filter rule on discovery and validation.
+    Research only; live V9.4 is not modified.
+    """
+    x = d.copy().sort_index()
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame()
+
+    discovery = x.iloc[:split_i - purge].copy()
+    validation = x.iloc[split_i:].copy()
+
+    rules = {
+        "BASE": lambda b: pd.Series(True, index=b.index),
+        "EFF_ONLY": lambda b: b["directional_efficiency"] >= 0.10,
+        "REV_ONLY": lambda b: b["reversal_count"] <= 4,
+        "PERSIST_ONLY": lambda b: (b["seg2_net"] < 0) & (b["seg3_net"] < 0),
+        "EFF_REV": lambda b: (b["directional_efficiency"] >= 0.10) & (b["reversal_count"] <= 4),
+        "EFF_PERSIST": lambda b: (b["directional_efficiency"] >= 0.10) & (b["seg2_net"] < 0) & (b["seg3_net"] < 0),
+        "REV_PERSIST": lambda b: (b["reversal_count"] <= 4) & (b["seg2_net"] < 0) & (b["seg3_net"] < 0),
+        "ALL_3": lambda b: (b["directional_efficiency"] >= 0.10) & (b["reversal_count"] <= 4) & (b["seg2_net"] < 0) & (b["seg3_net"] < 0),
+    }
+
+    rows=[]
+    for sample, frame in (("DISCOVERY", discovery), ("VALIDATION", validation)):
+        base=frame[frame["bearish_candidate"]].copy()
+        for rule_name, rule in rules.items():
+            g=base[rule(base)].copy()
+            row={
+                "sample": sample, "rule": rule_name,
+                "bearish_candidates": len(base), "signals": len(g),
+                "signals_kept_pct": 100.0*len(g)/len(base) if len(base) else np.nan,
+                "avg_efficiency": g["directional_efficiency"].mean() if len(g) else np.nan,
+                "avg_reversals": g["reversal_count"].mean() if len(g) else np.nan,
+                "avg_sell_mfe_60m": g["sell_mfe_60m"].mean() if len(g) else np.nan,
+                "avg_sell_mae_60m": g["sell_mae_60m"].mean() if len(g) else np.nan,
+            }
+            for minutes in (15,30,60,120):
+                col=f"forward_{minutes}m"
+                row[f"success_rate_{minutes}m"]=(g[col] <= 0).mean() if len(g) else np.nan
+                row[f"avg_forward_{minutes}m"]=g[col].mean() if len(g) else np.nan
+            rows.append(row)
+    return pd.DataFrame(rows)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -728,6 +778,12 @@ def main():
         index=False,
     )
 
+    component_comparison = compare_three_filter_components(detailed)
+    component_comparison.to_csv(
+        "candle_dynamics_three_filter_components_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -741,6 +797,8 @@ def main():
     print("\nSIMPLE 3-FILTER RULE — OUT-OF-SAMPLE VALIDATION")
     print(simple_rule_metadata.to_string(index=False))
     print(simple_rule_validation.to_string(index=False))
+    print("\nTHREE-FILTER COMPONENT ABLATION — DISCOVERY VS VALIDATION")
+    print(component_comparison.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
