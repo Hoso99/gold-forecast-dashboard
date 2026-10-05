@@ -589,6 +589,79 @@ def out_of_sample_multifactor_validation(d, train_fraction=0.70, top_n=20):
     }])
     return metadata, result
 
+
+def validate_simple_three_filter_rule(d, train_fraction=0.70):
+    """Validate one simple, pre-specified 3-filter SELL confirmation rule.
+
+    Filters derived from the robust region of the prior research, not from a new
+    grid search:
+      1) directional efficiency >= 0.10
+      2) reversal count <= 4
+      3) persistence: segment 2 and segment 3 net movement are both bearish
+
+    The existing bearish_candidate definition remains the starting population.
+    Results are reported for discovery, unseen validation, and all data.
+    Research only; live V9.4 is not modified.
+    """
+    x = d.copy().sort_index()
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame(), pd.DataFrame()
+
+    discovery = x.iloc[:split_i - purge].copy()
+    validation = x.iloc[split_i:].copy()
+
+    def apply_rule(frame):
+        base = frame[frame["bearish_candidate"]].copy()
+        mask = (
+            (base["directional_efficiency"] >= 0.10)
+            & (base["reversal_count"] <= 4)
+            & (base["seg2_net"] < 0)
+            & (base["seg3_net"] < 0)
+        )
+        return base, base[mask].copy()
+
+    rows = []
+    for label, frame in (("DISCOVERY", discovery), ("VALIDATION", validation), ("ALL", x)):
+        base, g = apply_rule(frame)
+        row = {
+            "sample": label,
+            "complete_m15": len(frame),
+            "bearish_candidates": len(base),
+            "signals": len(g),
+            "signals_kept_pct": 100.0 * len(g) / len(base) if len(base) else np.nan,
+            "efficiency_min": 0.10,
+            "max_reversals": 4,
+            "persistence": "SEG2_SEG3",
+            "avg_efficiency": g["directional_efficiency"].mean() if len(g) else np.nan,
+            "avg_reversals": g["reversal_count"].mean() if len(g) else np.nan,
+            "avg_late_sell_acceleration": g["late_sell_acceleration"].mean() if len(g) else np.nan,
+            "avg_sell_mfe_60m": g["sell_mfe_60m"].mean() if len(g) else np.nan,
+            "avg_sell_mae_60m": g["sell_mae_60m"].mean() if len(g) else np.nan,
+        }
+        for minutes in (15, 30, 60, 120):
+            col = f"forward_{minutes}m"
+            row[f"success_rate_{minutes}m"] = (g[col] <= 0).mean() if len(g) else np.nan
+            row[f"false_sell_rate_{minutes}m"] = (g[col] > 0).mean() if len(g) else np.nan
+            row[f"avg_forward_{minutes}m"] = g[col].mean() if len(g) else np.nan
+        rows.append(row)
+
+    metadata = pd.DataFrame([{
+        "rule": "EFF>=0.10 + REV<=4 + SEG2&SEG3 bearish",
+        "total_complete_m15": n,
+        "discovery_candles": len(discovery),
+        "purged_candles": purge,
+        "validation_candles": len(validation),
+        "discovery_start": discovery.index.min(),
+        "discovery_end": discovery.index.max(),
+        "validation_start": validation.index.min(),
+        "validation_end": validation.index.max(),
+        "train_fraction": train_fraction,
+    }])
+    return metadata, pd.DataFrame(rows)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -645,6 +718,16 @@ def main():
         index=False,
     )
 
+    simple_rule_metadata, simple_rule_validation = validate_simple_three_filter_rule(detailed)
+    simple_rule_metadata.to_csv(
+        "candle_dynamics_three_filter_metadata_v94.csv",
+        index=False,
+    )
+    simple_rule_validation.to_csv(
+        "candle_dynamics_three_filter_validation_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -655,6 +738,9 @@ def main():
     print(oos_metadata.to_string(index=False))
     print("\nOUT-OF-SAMPLE VALIDATION — DISCOVERY TOP 20")
     print(oos_validation.to_string(index=False))
+    print("\nSIMPLE 3-FILTER RULE — OUT-OF-SAMPLE VALIDATION")
+    print(simple_rule_metadata.to_string(index=False))
+    print(simple_rule_validation.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
