@@ -823,6 +823,132 @@ def optimize_persistence_filter(d, train_fraction=0.70):
 
     return ranked, pd.DataFrame(validation_rows)
 
+
+def research_structure_48_filter(d, train_fraction=0.70):
+    """Research-only 48-M15 support/resistance/location filter.
+
+    Tests whether a bearish candidate has enough room to prior 48-candle
+    support and/or is located near prior 48-candle resistance. Uses only
+    levels shifted by one candle, so the current candle is not used to build
+    its own support/resistance level. Live V9.4 is unchanged.
+    """
+    x = d.copy().sort_index()
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame(), pd.DataFrame()
+
+    discovery = x.iloc[:split_i - purge].copy()
+    validation = x.iloc[split_i:].copy()
+
+    # Fixed research grid in ATR units. Selection/ranking happens on discovery.
+    resistance_max = [0.5, 1.0, 1.5, 2.0]
+    support_min = [0.5, 1.0, 1.5, 2.0, 3.0]
+
+    def base_frame(frame):
+        b = frame[frame["bearish_candidate"]].copy()
+        return b[
+            b["distance_to_resistance_atr"].notna()
+            & b["distance_to_support_atr"].notna()
+        ].copy()
+
+    disc = base_frame(discovery)
+    val = base_frame(validation)
+    rows = []
+
+    # Baseline plus individual and combined location rules.
+    specs = [("BASE", None, None)]
+    specs += [("NEAR_RESISTANCE", r, None) for r in resistance_max]
+    specs += [("ROOM_TO_SUPPORT", None, s) for s in support_min]
+    specs += [
+        ("RESISTANCE_AND_ROOM", r, s)
+        for r in resistance_max
+        for s in support_min
+    ]
+
+    def apply_rule(b, kind, rmax, smin):
+        m = pd.Series(True, index=b.index)
+        if rmax is not None:
+            m &= b["distance_to_resistance_atr"] <= rmax
+        if smin is not None:
+            m &= b["distance_to_support_atr"] >= smin
+        return b[m].copy()
+
+    for kind, rmax, smin in specs:
+        g = apply_rule(disc, kind, rmax, smin)
+        if len(g) < 50 and kind != "BASE":
+            continue
+        row = {
+            "rule": kind,
+            "resistance_max_atr": rmax,
+            "support_min_atr": smin,
+            "discovery_candidates": len(disc),
+            "discovery_signals": len(g),
+            "discovery_kept_pct": 100.0 * len(g) / len(disc) if len(disc) else np.nan,
+            "discovery_avg_resistance_atr": g["distance_to_resistance_atr"].mean() if len(g) else np.nan,
+            "discovery_avg_support_atr": g["distance_to_support_atr"].mean() if len(g) else np.nan,
+        }
+        for minutes in (15, 30, 60, 120):
+            col = f"forward_{minutes}m"
+            row[f"discovery_success_{minutes}m"] = (g[col] <= 0).mean() if len(g) else np.nan
+            row[f"discovery_avg_forward_{minutes}m"] = g[col].mean() if len(g) else np.nan
+        row["discovery_score"] = (
+            0.20 * row["discovery_success_15m"]
+            + 0.25 * row["discovery_success_30m"]
+            + 0.40 * row["discovery_success_60m"]
+            + 0.15 * row["discovery_success_120m"]
+        ) if len(g) else np.nan
+        rows.append(row)
+
+    ranked = pd.DataFrame(rows)
+    if ranked.empty:
+        return ranked, pd.DataFrame()
+
+    ranked = ranked.sort_values(
+        ["discovery_score", "discovery_signals"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+
+    validation_rows = []
+    # Validate the discovery top 12 without re-ranking on validation.
+    for rank, rule in ranked.head(12).iterrows():
+        rmax = None if pd.isna(rule["resistance_max_atr"]) else float(rule["resistance_max_atr"])
+        smin = None if pd.isna(rule["support_min_atr"]) else float(rule["support_min_atr"])
+        g = apply_rule(val, rule["rule"], rmax, smin)
+        out = {
+            "discovery_rank": rank + 1,
+            "rule": rule["rule"],
+            "resistance_max_atr": rmax,
+            "support_min_atr": smin,
+            "discovery_signals": int(rule["discovery_signals"]),
+            "discovery_score": rule["discovery_score"],
+            "validation_candidates": len(val),
+            "validation_signals": len(g),
+            "validation_kept_pct": 100.0 * len(g) / len(val) if len(val) else np.nan,
+            "validation_avg_resistance_atr": g["distance_to_resistance_atr"].mean() if len(g) else np.nan,
+            "validation_avg_support_atr": g["distance_to_support_atr"].mean() if len(g) else np.nan,
+        }
+        for minutes in (15, 30, 60, 120):
+            col = f"forward_{minutes}m"
+            out[f"discovery_success_{minutes}m"] = rule[f"discovery_success_{minutes}m"]
+            out[f"validation_success_{minutes}m"] = (g[col] <= 0).mean() if len(g) else np.nan
+            out[f"validation_avg_forward_{minutes}m"] = g[col].mean() if len(g) else np.nan
+        out["validation_score"] = (
+            0.20 * out["validation_success_15m"]
+            + 0.25 * out["validation_success_30m"]
+            + 0.40 * out["validation_success_60m"]
+            + 0.15 * out["validation_success_120m"]
+        ) if len(g) else np.nan
+        out["score_change"] = (
+            out["validation_score"] - out["discovery_score"]
+            if len(g) else np.nan
+        )
+        validation_rows.append(out)
+
+    return ranked, pd.DataFrame(validation_rows)
+
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -905,6 +1031,16 @@ def main():
         index=False,
     )
 
+    structure48_search, structure48_validation = research_structure_48_filter(detailed)
+    structure48_search.to_csv(
+        "candle_dynamics_structure48_search_v94.csv",
+        index=False,
+    )
+    structure48_validation.to_csv(
+        "candle_dynamics_structure48_validation_v94.csv",
+        index=False,
+    )
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -924,6 +1060,10 @@ def main():
     print(persistence_search.to_string(index=False))
     print("\nPERSISTENCE FILTER — OUT-OF-SAMPLE VALIDATION TOP 12")
     print(persistence_validation.to_string(index=False))
+    print("\n48-CANDLE SUPPORT/RESISTANCE — DISCOVERY")
+    print(structure48_search.head(30).to_string(index=False))
+    print("\n48-CANDLE SUPPORT/RESISTANCE — OUT-OF-SAMPLE VALIDATION TOP 12")
+    print(structure48_validation.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")

@@ -1,0 +1,11 @@
+V9.4 Candle Dynamics — 48-candle structure research
+
+Upload candle_dynamics_v94.py to the repository root and replace the existing
+research file with the same name.
+
+This version adds research-only 48-M15 support/resistance/location testing.
+It does NOT modify entry_watch_v94.py or the live V9.4 decision engine.
+
+New result files after the GitHub Actions run:
+- candle_dynamics_structure48_search_v94.csv
+- candle_dynamics_structure48_validation_v94.csv
