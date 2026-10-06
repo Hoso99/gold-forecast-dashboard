@@ -1358,6 +1358,90 @@ def research_combined_context_v94(d, train_fraction=0.70):
         detail.iloc[split_i:,detail.columns.get_loc("sample")]="VALIDATION"
     return summary,detail
 
+
+def research_full_chain_v94(d, train_fraction=0.70):
+    """Research-only combined-chain validation. Live V9.4 is unchanged.
+
+    Uses the existing historical bearish_candidate research proxy, completed-H4
+    context, causal 48-M15 S/R location, and a fixed 2-of-last-3 bearish M15
+    entry-timing condition. This is NOT labelled exact production parity with
+    the live 10-candle + 9-check engine.
+    """
+    _, h4d = research_h4_context(d, train_fraction)
+    x = d.copy().sort_index().join(h4d[["h4_context"]], how="left")
+
+    # Reuse causal S/R fields created by enrich(): both levels are shifted one M15.
+    x["sr_good_sell"] = (
+        x["distance_to_resistance_atr"].between(0.0, 2.0, inclusive="both")
+        & (x["distance_to_support_atr"] >= 3.0)
+    )
+    x["h4_bearish"] = x["h4_context"].eq("BEARISH")
+
+    bearish_bar = (x["close"] < x["open"]).astype(int)
+    x["bearish_2_of_3"] = bearish_bar.rolling(3, min_periods=3).sum().ge(2)
+
+    # Fixed score; not optimized on validation.
+    # S/R receives 2 points because it was the strongest prior standalone context.
+    x["context_score"] = (
+        2 * x["sr_good_sell"].astype(int)
+        + x["h4_bearish"].astype(int)
+        + x["bearish_2_of_3"].astype(int)
+    )
+
+    n = len(x)
+    split_i = int(n * train_fraction)
+    purge = 8
+    discovery = x.iloc[:max(0, split_i-purge)].copy()
+    validation = x.iloc[split_i:].copy()
+
+    def summarize(sample, frame):
+        b = frame[frame["bearish_candidate"]].copy()
+        rules = {
+            "BASE_RESEARCH_PROXY": pd.Series(True, index=b.index),
+            "ENTRY_TIMING_2_OF_3": b["bearish_2_of_3"],
+            "SR_GOOD": b["sr_good_sell"],
+            "H4_BEARISH": b["h4_bearish"],
+            "CONTEXT_SCORE_GE_2": b["context_score"] >= 2,
+            "CONTEXT_SCORE_GE_3": b["context_score"] >= 3,
+            "ALL_CONTEXT_SCORE_4": b["context_score"] == 4,
+        }
+        rows = []
+        for name, mask in rules.items():
+            g = b[mask.fillna(False)].copy()
+            row = {
+                "sample": sample,
+                "rule": name,
+                "baseline_candidates": len(b),
+                "signals": len(g),
+                "kept_pct": 100.0*len(g)/len(b) if len(b) else np.nan,
+            }
+            for m in (15,30,60,120):
+                col = f"forward_{m}m"
+                row[f"success_{m}m"] = (g[col] <= 0).mean() if len(g) else np.nan
+                row[f"avg_forward_{m}m"] = g[col].mean() if len(g) else np.nan
+            rows.append(row)
+        return rows
+
+    summary = pd.DataFrame(
+        summarize("DISCOVERY", discovery)
+        + summarize("VALIDATION", validation)
+        + summarize("ALL", x)
+    )
+
+    detail_cols = [
+        "open","high","low","close","atr14","bearish_candidate",
+        "resistance_48","support_48","distance_to_resistance_atr",
+        "distance_to_support_atr","sr_good_sell","h4_context","h4_bearish",
+        "bearish_2_of_3","context_score",
+        "forward_15m","forward_30m","forward_60m","forward_120m"
+    ]
+    detail = x[[c for c in detail_cols if c in x.columns]].copy()
+    detail["sample"] = "PURGED"
+    detail.iloc[:max(0,split_i-purge), detail.columns.get_loc("sample")] = "DISCOVERY"
+    if split_i < len(detail):
+        detail.iloc[split_i:, detail.columns.get_loc("sample")] = "VALIDATION"
+    return summary, detail
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1467,6 +1551,10 @@ def main():
     combined_summary.to_csv("candle_dynamics_combined_context_summary_v94.csv", index=False)
     combined_detail.to_csv("candle_dynamics_combined_context_detail_v94.csv")
 
+    full_chain_summary, full_chain_detail = research_full_chain_v94(detailed)
+    full_chain_summary.to_csv("candle_dynamics_full_chain_summary_v94.csv", index=False)
+    full_chain_detail.to_csv("candle_dynamics_full_chain_detail_v94.csv")
+
     stability_detail, stability_summary = research_continuation_time_stability(detailed)
     stability_detail.to_csv("candle_dynamics_continuation_stability_blocks_v94.csv", index=False)
     stability_summary.to_csv("candle_dynamics_continuation_stability_summary_v94.csv", index=False)
@@ -1476,6 +1564,9 @@ def main():
 
     print("\nCOMBINED M15 + S/R + H1/H4 VALIDATION")
     print(combined_summary.to_string(index=False))
+
+    print("\nV9.4 FULL-CHAIN RESEARCH VALIDATION")
+    print(full_chain_summary.to_string(index=False))
 
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
