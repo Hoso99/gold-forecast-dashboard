@@ -1038,6 +1038,74 @@ def research_sell_continuation_score(d, train_fraction=0.70):
     return search,validation_table,pd.DataFrame(ab)
 
 
+
+def research_sell_exhaustion_veto(d, train_fraction=0.70):
+    """Test whether simple exhaustion/reversal vetoes improve high-score SELLs OOS.
+
+    This deliberately uses a small, fixed family of interpretable vetoes rather than
+    another large grid search. The goal is to identify false high-score SELLs caused
+    by nearby support, lower-wick rejection, extreme candle expansion, or excessive
+    intrabar reversals. Research only; live V9.4 remains unchanged.
+    """
+    x=d.copy().sort_index(); n=len(x); split_i=int(n*train_fraction); purge=8
+    if split_i <= purge or split_i >= n: return pd.DataFrame(), pd.DataFrame()
+    discovery=x.iloc[:split_i-purge].copy(); validation=x.iloc[split_i:].copy()
+
+    def scored(frame):
+        b=frame[frame["bearish_candidate"]].copy()
+        if b.empty: return b
+        atr=b["atr14"].replace(0,np.nan)
+        eff=(b["directional_efficiency"]/0.50).clip(0,1)
+        late_strength=(-(b["seg2_net"]+b["seg3_net"]))/atr
+        persist=(late_strength/0.75).clip(0,1)*((b["seg2_net"]<0)&(b["seg3_net"]<0)).astype(float)
+        clean=(1.0-b["reversal_count"].clip(0,12)/12.0).clip(0,1)
+        accel=(b["sell_acceleration_to_close"]/atr/0.50).clip(0,1)
+        room=(b["distance_to_support_atr"]/3.0).clip(0,1).fillna(0)
+        near=(1.0-b["distance_to_resistance_atr"]/2.0).clip(0,1).fillna(0)
+        location=np.maximum(near,b["high_break_rejection"].astype(float))
+        b["continuation_score"]=(20*eff+25*persist+15*clean+15*accel+15*room+10*location)
+        b["lower_wick_ratio"]=(b["lower_wick"]/b["range"].replace(0,np.nan)).fillna(0)
+        b["veto_close_support"]=b["distance_to_support_atr"].fillna(np.inf)<1.0
+        b["veto_lower_wick"]=b["lower_wick_ratio"]>=0.35
+        b["veto_extreme_range"]=b["range_atr_ratio"]>=1.50
+        b["veto_reversal_heavy"]=b["reversal_count"]>=8
+        b["exhaustion_count"]=(b[["veto_close_support","veto_lower_wick","veto_extreme_range","veto_reversal_heavy"]].sum(axis=1))
+        return b
+
+    disc=scored(discovery); val=scored(validation)
+    vetoes={
+        "NONE": lambda b: pd.Series(False,index=b.index),
+        "CLOSE_SUPPORT": lambda b: b["veto_close_support"],
+        "LOWER_WICK_REJECTION": lambda b: b["veto_lower_wick"],
+        "EXTREME_RANGE": lambda b: b["veto_extreme_range"],
+        "REVERSAL_HEAVY": lambda b: b["veto_reversal_heavy"],
+        "ANY_EXHAUSTION": lambda b: b["exhaustion_count"]>=1,
+        "TWO_PLUS_EXHAUSTION": lambda b: b["exhaustion_count"]>=2,
+    }
+    rows=[]
+    for threshold in (65,70,75):
+        for name,fn in vetoes.items():
+            for sample,b in (("DISCOVERY",disc),("VALIDATION",val)):
+                base=b[b["continuation_score"]>=threshold].copy()
+                g=base[~fn(base)].copy()
+                r={"sample":sample,"score_threshold":threshold,"veto":name,"high_score_candidates":len(base),"signals_after_veto":len(g),"kept_pct":100*len(g)/len(base) if len(base) else np.nan,"avg_exhaustion_count":g["exhaustion_count"].mean() if len(g) else np.nan,"avg_mfe_60m":g["sell_mfe_60m"].mean() if len(g) else np.nan,"avg_mae_60m":g["sell_mae_60m"].mean() if len(g) else np.nan}
+                for m in (15,30,60,120):
+                    col=f"forward_{m}m"; r[f"success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan; r[f"avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+                r["continuation_metric"]=(.20*r["success_15m"]+.25*r["success_30m"]+.40*r["success_60m"]+.15*r["success_120m"]) if len(g) else np.nan
+                rows.append(r)
+    table=pd.DataFrame(rows)
+
+    # Failure profile: compare successful vs false 60m outcomes at the promising
+    # high-score thresholds so we can see which exhaustion features distinguish them.
+    prof=[]
+    for sample,b in (("DISCOVERY",disc),("VALIDATION",val)):
+        for threshold in (65,70,75):
+            q=b[b["continuation_score"]>=threshold].copy()
+            for outcome,mask in (("SUCCESS_60M",q["forward_60m"]<=0),("FALSE_60M",q["forward_60m"]>0)):
+                g=q[mask]
+                prof.append({"sample":sample,"score_threshold":threshold,"outcome":outcome,"signals":len(g),"avg_score":g["continuation_score"].mean() if len(g) else np.nan,"close_support_rate":g["veto_close_support"].mean() if len(g) else np.nan,"lower_wick_rejection_rate":g["veto_lower_wick"].mean() if len(g) else np.nan,"extreme_range_rate":g["veto_extreme_range"].mean() if len(g) else np.nan,"reversal_heavy_rate":g["veto_reversal_heavy"].mean() if len(g) else np.nan,"avg_exhaustion_count":g["exhaustion_count"].mean() if len(g) else np.nan,"avg_distance_support_atr":g["distance_to_support_atr"].mean() if len(g) else np.nan,"avg_distance_resistance_atr":g["distance_to_resistance_atr"].mean() if len(g) else np.nan,"avg_range_atr_ratio":g["range_atr_ratio"].mean() if len(g) else np.nan,"avg_reversals":g["reversal_count"].mean() if len(g) else np.nan,"avg_lower_wick_ratio":g["lower_wick_ratio"].mean() if len(g) else np.nan})
+    return table,pd.DataFrame(prof)
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1135,6 +1203,10 @@ def main():
     continuation_validation.to_csv("candle_dynamics_continuation_score_validation_v94.csv", index=False)
     continuation_ablation.to_csv("candle_dynamics_continuation_score_ablation_v94.csv", index=False)
 
+    exhaustion_veto, exhaustion_profile = research_sell_exhaustion_veto(detailed)
+    exhaustion_veto.to_csv("candle_dynamics_exhaustion_veto_v94.csv", index=False)
+    exhaustion_profile.to_csv("candle_dynamics_exhaustion_profile_v94.csv", index=False)
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -1164,6 +1236,10 @@ def main():
     print(continuation_validation.to_string(index=False))
     print("\nSELL CONTINUATION SCORE — COMPONENT ABLATION")
     print(continuation_ablation.to_string(index=False))
+    print("\nHIGH-SCORE SELL EXHAUSTION VETO — DISCOVERY VS VALIDATION")
+    print(exhaustion_veto.to_string(index=False))
+    print("\nHIGH-SCORE SELL FAILURE PROFILE — SUCCESS VS FALSE SELL")
+    print(exhaustion_profile.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
