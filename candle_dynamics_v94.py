@@ -949,6 +949,95 @@ def research_structure_48_filter(d, train_fraction=0.70):
     return ranked, pd.DataFrame(validation_rows)
 
 
+
+def research_sell_continuation_score(d, train_fraction=0.70):
+    """Research a compact SELL-continuation score with strict chronological OOS validation.
+
+    The score combines six distinct ideas already measured by this research script:
+    directional efficiency, late bearish persistence, reversal cleanliness, late sell
+    acceleration, room to 48-candle support, and resistance/rejection location.
+    All features use information available at the M15 close.  Threshold selection is
+    performed on discovery only; validation is never used to choose a threshold.
+    Research only; live V9.4 remains unchanged.
+    """
+    x=d.copy().sort_index()
+    n=len(x); split_i=int(n*train_fraction); purge=8
+    if split_i <= purge or split_i >= n:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    discovery=x.iloc[:split_i-purge].copy(); validation=x.iloc[split_i:].copy()
+
+    def score_frame(frame, enabled=None):
+        b=frame[frame["bearish_candidate"]].copy()
+        if b.empty: return b
+        enabled=set(enabled or ["EFF","PERSIST","CLEAN","ACCEL","ROOM","LOCATION"])
+        atr=b["atr14"].replace(0,np.nan)
+        # Each component is bounded 0..1 to stop one noisy feature dominating.
+        comp={}
+        comp["EFF"]=(b["directional_efficiency"]/0.50).clip(0,1)
+        late_strength=(-(b["seg2_net"]+b["seg3_net"]))/atr
+        comp["PERSIST"]=(late_strength/0.75).clip(0,1) * ((b["seg2_net"]<0)&(b["seg3_net"]<0)).astype(float)
+        comp["CLEAN"]=(1.0-b["reversal_count"].clip(0,12)/12.0).clip(0,1)
+        comp["ACCEL"]=(b["sell_acceleration_to_close"]/atr/0.50).clip(0,1)
+        comp["ROOM"]=(b["distance_to_support_atr"]/3.0).clip(0,1).fillna(0)
+        near=(1.0-b["distance_to_resistance_atr"]/2.0).clip(0,1).fillna(0)
+        reject=b["high_break_rejection"].astype(float)
+        comp["LOCATION"]=np.maximum(near, reject)
+        weights={"EFF":20,"PERSIST":25,"CLEAN":15,"ACCEL":15,"ROOM":15,"LOCATION":10}
+        denom=sum(weights[k] for k in enabled)
+        b["continuation_score"]=sum(weights[k]*comp[k] for k in enabled)/denom*100.0
+        for k in comp: b[f"score_{k.lower()}"]=comp[k]*100.0
+        return b
+
+    disc=score_frame(discovery); val=score_frame(validation)
+    thresholds=[40,45,50,55,60,65,70,75]
+    rows=[]
+    for th in thresholds:
+        g=disc[disc["continuation_score"]>=th].copy()
+        if len(g)<50: continue
+        row={"score_threshold":th,"discovery_candidates":len(disc),"discovery_signals":len(g),
+             "discovery_kept_pct":100*len(g)/len(disc),"discovery_avg_score":g["continuation_score"].mean(),
+             "discovery_avg_mfe_60m":g["sell_mfe_60m"].mean(),"discovery_avg_mae_60m":g["sell_mae_60m"].mean()}
+        for m in (15,30,60,120):
+            col=f"forward_{m}m"; row[f"discovery_success_{m}m"]=(g[col]<=0).mean(); row[f"discovery_avg_forward_{m}m"]=g[col].mean()
+        row["discovery_score"]=(.20*row["discovery_success_15m"]+.25*row["discovery_success_30m"]+.40*row["discovery_success_60m"]+.15*row["discovery_success_120m"])
+        rows.append(row)
+    search=pd.DataFrame(rows)
+    if search.empty: return search,pd.DataFrame(),pd.DataFrame()
+    # Rank on discovery only, with a mild sample-size preference as tie-breaker.
+    search=search.sort_values(["discovery_score","discovery_signals"],ascending=[False,False]).reset_index(drop=True)
+    out=[]
+    for rank,rule in search.iterrows():
+        th=float(rule["score_threshold"]); g=val[val["continuation_score"]>=th].copy()
+        r={"discovery_rank":rank+1,"score_threshold":th,"discovery_signals":int(rule["discovery_signals"]),
+           "discovery_score":rule["discovery_score"],"validation_candidates":len(val),"validation_signals":len(g),
+           "validation_kept_pct":100*len(g)/len(val) if len(val) else np.nan,
+           "validation_avg_score":g["continuation_score"].mean() if len(g) else np.nan,
+           "validation_avg_mfe_60m":g["sell_mfe_60m"].mean() if len(g) else np.nan,
+           "validation_avg_mae_60m":g["sell_mae_60m"].mean() if len(g) else np.nan}
+        for m in (15,30,60,120):
+            col=f"forward_{m}m"; r[f"validation_success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan; r[f"validation_avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+        r["validation_score"]=(.20*r["validation_success_15m"]+.25*r["validation_success_30m"]+.40*r["validation_success_60m"]+.15*r["validation_success_120m"]) if len(g) else np.nan
+        r["score_change"]=r["validation_score"]-r["discovery_score"] if len(g) else np.nan
+        out.append(r)
+    validation_table=pd.DataFrame(out)
+
+    # Component ablation at the best discovery threshold. A component is useful only
+    # if removing it hurts unseen validation, not merely discovery performance.
+    best_th=float(search.iloc[0]["score_threshold"])
+    all_components=["EFF","PERSIST","CLEAN","ACCEL","ROOM","LOCATION"]
+    ab=[]
+    for removed in ["NONE"]+all_components:
+        enabled=all_components if removed=="NONE" else [k for k in all_components if k!=removed]
+        for sample,frame in (("DISCOVERY",discovery),("VALIDATION",validation)):
+            b=score_frame(frame,enabled); g=b[b["continuation_score"]>=best_th]
+            rr={"sample":sample,"removed_component":removed,"threshold":best_th,"candidates":len(b),"signals":len(g),"kept_pct":100*len(g)/len(b) if len(b) else np.nan}
+            for m in (15,30,60,120):
+                col=f"forward_{m}m"; rr[f"success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan; rr[f"avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+            rr["continuation_metric"]=(.20*rr["success_15m"]+.25*rr["success_30m"]+.40*rr["success_60m"]+.15*rr["success_120m"]) if len(g) else np.nan
+            ab.append(rr)
+    return search,validation_table,pd.DataFrame(ab)
+
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1041,6 +1130,11 @@ def main():
         index=False,
     )
 
+    continuation_search, continuation_validation, continuation_ablation = research_sell_continuation_score(detailed)
+    continuation_search.to_csv("candle_dynamics_continuation_score_search_v94.csv", index=False)
+    continuation_validation.to_csv("candle_dynamics_continuation_score_validation_v94.csv", index=False)
+    continuation_ablation.to_csv("candle_dynamics_continuation_score_ablation_v94.csv", index=False)
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -1064,6 +1158,12 @@ def main():
     print(structure48_search.head(30).to_string(index=False))
     print("\n48-CANDLE SUPPORT/RESISTANCE — OUT-OF-SAMPLE VALIDATION TOP 12")
     print(structure48_validation.to_string(index=False))
+    print("\nSELL CONTINUATION SCORE — DISCOVERY")
+    print(continuation_search.to_string(index=False))
+    print("\nSELL CONTINUATION SCORE — OUT-OF-SAMPLE VALIDATION")
+    print(continuation_validation.to_string(index=False))
+    print("\nSELL CONTINUATION SCORE — COMPONENT ABLATION")
+    print(continuation_ablation.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
