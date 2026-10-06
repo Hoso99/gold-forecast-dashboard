@@ -1462,6 +1462,104 @@ def research_production_parity_v94(d, train_fraction=0.70):
           "sell_mfe_60m","sell_mae_60m"]
     return summary,x[[c for c in cols if c in x.columns]].copy()
 
+
+def research_balanced_sltp_v94(prod_detail, train_fraction=0.70):
+    """Step 22C final: fixed balanced SL/TP geometry on production+context signals.
+
+    Research only. Uses the already-qualified production-parity + context>=2 signals.
+    Entry is the completed M15 close. Stop is above prior structure and is constrained
+    to a balanced ATR zone; if structure cannot fit safely, the setup is rejected.
+    TP is tested at fixed RR candidates and cannot extend through prior 48-M15 support.
+    Same-candle SL+TP hits are AMBIGUOUS, never counted as wins.
+    """
+    x=prod_detail.copy().sort_index()
+    if "prod_plus_context2" not in x:
+        raise RuntimeError("Production/context qualification missing.")
+
+    # Rebuild causal prior structure if needed.
+    if "resistance_48" not in x:
+        x["resistance_48"]=x["high"].shift(1).rolling(48).max()
+    if "support_48" not in x:
+        x["support_48"]=x["low"].shift(1).rolling(48).min()
+
+    # Fixed families chosen before this validation; no validation-set optimization.
+    stop_mins=(0.75,1.00)
+    stop_maxs=(1.50,1.75)
+    buffers=(0.15,0.25)
+    rrs=(1.25,1.50,1.75,2.00)
+
+    n=len(x); split_i=int(n*train_fraction); purge=8
+    discovery_end=max(0,split_i-purge)
+
+    def evaluate(frame, sample):
+        rows=[]
+        qualified=frame[frame["prod_plus_context2"].fillna(False)].copy()
+        for min_atr in stop_mins:
+            for max_atr in stop_maxs:
+                for buffer_atr in buffers:
+                    for rr in rrs:
+                        wins=losses=ambiguous=unresolved=rejected=0
+                        stop_dists=[]; tp_dists=[]; accepted=0
+                        for idx,row in qualified.iterrows():
+                            atr=float(row.get("atr14",np.nan))
+                            entry=float(row["close"])
+                            swing=float(row.get("resistance_48",np.nan))
+                            support=float(row.get("support_48",np.nan))
+                            if not np.isfinite(atr) or atr<=0 or not np.isfinite(swing):
+                                rejected+=1; continue
+
+                            # Structural invalidation + small ATR buffer.
+                            structural=max(swing-entry,0.0)+buffer_atr*atr
+                            stop_dist=max(structural,min_atr*atr)
+                            if stop_dist>max_atr*atr:
+                                rejected+=1; continue
+
+                            raw_tp=rr*stop_dist
+                            # Support-aware: target must be reachable before prior support.
+                            room=max(entry-support,0.0) if np.isfinite(support) else np.nan
+                            if not np.isfinite(room) or room < raw_tp:
+                                rejected+=1; continue
+                            tp_dist=raw_tp
+                            sl=entry+stop_dist; tp=entry-tp_dist
+                            accepted+=1; stop_dists.append(stop_dist); tp_dists.append(tp_dist)
+
+                            # Evaluate next 120 minutes (8 M15 candles).
+                            pos=x.index.get_loc(idx)
+                            future=x.iloc[pos+1:pos+9]
+                            outcome="UNRESOLVED"
+                            for _,bar in future.iterrows():
+                                hit_sl=float(bar["high"])>=sl
+                                hit_tp=float(bar["low"])<=tp
+                                if hit_sl and hit_tp:
+                                    outcome="AMBIGUOUS"; break
+                                if hit_sl:
+                                    outcome="LOSS"; break
+                                if hit_tp:
+                                    outcome="WIN"; break
+                            if outcome=="WIN": wins+=1
+                            elif outcome=="LOSS": losses+=1
+                            elif outcome=="AMBIGUOUS": ambiguous+=1
+                            else: unresolved+=1
+
+                        decided=wins+losses
+                        rows.append({
+                            "sample":sample,"min_stop_atr":min_atr,"max_stop_atr":max_atr,
+                            "buffer_atr":buffer_atr,"target_rr":rr,
+                            "qualified_signals":len(qualified),"accepted":accepted,"rejected_geometry":rejected,
+                            "acceptance_pct":100*accepted/len(qualified) if len(qualified) else np.nan,
+                            "wins":wins,"losses":losses,"ambiguous":ambiguous,"unresolved":unresolved,
+                            "decided_win_rate_pct":100*wins/decided if decided else np.nan,
+                            "avg_stop_usd":np.mean(stop_dists) if stop_dists else np.nan,
+                            "median_stop_usd":np.median(stop_dists) if stop_dists else np.nan,
+                            "avg_tp_usd":np.mean(tp_dists) if tp_dists else np.nan,
+                            "median_tp_usd":np.median(tp_dists) if tp_dists else np.nan,
+                        })
+        return rows
+
+    discovery=x.iloc[:discovery_end]
+    validation=x.iloc[split_i:]
+    return pd.DataFrame(evaluate(discovery,"DISCOVERY")+evaluate(validation,"VALIDATION"))
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1573,6 +1671,8 @@ def main():
 
     prod_parity_summary, prod_parity_detail = research_production_parity_v94(detailed)
     prod_parity_summary.to_csv("candle_dynamics_production_parity_summary_v94.csv", index=False)
+    balanced_sltp = research_balanced_sltp_v94(prod_parity_detail)
+    balanced_sltp.to_csv("candle_dynamics_balanced_sltp_v94.csv", index=False)
     prod_parity_detail.to_csv("candle_dynamics_production_parity_detail_v94.csv")
 
     stability_detail, stability_summary = research_continuation_time_stability(detailed)
@@ -1584,6 +1684,9 @@ def main():
 
     print("\nCOMBINED M15 + S/R + H1/H4 VALIDATION")
     print(combined_summary.to_string(index=False))
+
+    print("\nV9.4 BALANCED SL/TP VALIDATION")
+    print(balanced_sltp.to_string(index=False))
 
     print("\nV9.4 PRODUCTION-PARITY HISTORICAL VALIDATION")
     print(prod_parity_summary.to_string(index=False))
