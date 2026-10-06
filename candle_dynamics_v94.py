@@ -1241,6 +1241,84 @@ def research_h4_context(d, train_fraction=0.70):
                    "forward_15m","forward_30m","forward_60m","forward_120m"]].copy()
     return pd.DataFrame(rows),detail
 
+
+def research_combined_context_v94(d, train_fraction=0.70):
+    """Research-only combined M15 + S/R + H1/H4 context validation.
+
+    This deliberately avoids a threshold grid search. It compares fixed,
+    interpretable combinations on the same chronological discovery/validation
+    split. H1/H4 mappings use completed higher-timeframe candles only.
+    """
+    # Reuse the already-tested causal H1/H4 mappings.
+    _, h1d = research_h1_context(d, train_fraction)
+    _, h4d = research_h4_context(d, train_fraction)
+
+    x = d.copy().sort_index()
+    h1map = h1d[["h1_context"]].copy()
+    h4map = h4d[["h4_context"]].copy()
+    x = x.join(h1map, how="left").join(h4map, how="left")
+
+    # Existing 48-M15 support/resistance is shifted one candle in enrich(),
+    # so these location features are known at signal time.
+    x["room_to_support_atr"] = (x["close"] - x["support_48"]) / x["atr14"]
+    x["distance_from_resistance_atr"] = (x["resistance_48"] - x["close"]) / x["atr14"]
+
+    # Previously identified fixed research location condition:
+    # within 2 ATR of resistance AND at least 3 ATR room to support.
+    x["sr_good_sell"] = (
+        (x["distance_from_resistance_atr"] >= 0)
+        & (x["distance_from_resistance_atr"] <= 2.0)
+        & (x["room_to_support_atr"] >= 3.0)
+    )
+
+    n=len(x); split_i=int(n*train_fraction); purge=8
+    discovery=x.iloc[:max(0,split_i-purge)].copy()
+    validation=x.iloc[split_i:].copy()
+
+    def summarize(sample, frame):
+        b=frame[frame["bearish_candidate"]].copy()
+        masks = {
+            "M15_BASELINE": pd.Series(True,index=b.index),
+            "M15_PLUS_SR_GOOD": b["sr_good_sell"],
+            "M15_PLUS_H4_BEARISH": b["h4_context"].eq("BEARISH"),
+            "M15_PLUS_H4_BEARISH_PLUS_SR_GOOD":
+                b["h4_context"].eq("BEARISH") & b["sr_good_sell"],
+            "M15_PLUS_H1_BEARISH_PLUS_H4_BEARISH":
+                b["h1_context"].eq("BEARISH") & b["h4_context"].eq("BEARISH"),
+            "M15_PLUS_H1_BEARISH_PLUS_H4_BEARISH_PLUS_SR_GOOD":
+                b["h1_context"].eq("BEARISH") & b["h4_context"].eq("BEARISH") & b["sr_good_sell"],
+        }
+        rows=[]
+        for name,mask in masks.items():
+            g=b[mask.fillna(False)]
+            row={"sample":sample,"combination":name,"baseline_candidates":len(b),
+                 "signals":len(g),"kept_pct":100*len(g)/len(b) if len(b) else np.nan}
+            for m in (15,30,60,120):
+                col=f"forward_{m}m"
+                row[f"success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan
+                row[f"avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+            rows.append(row)
+        return rows
+
+    summary=pd.DataFrame(
+        summarize("DISCOVERY",discovery)
+        + summarize("VALIDATION",validation)
+        + summarize("ALL",x)
+    )
+
+    detail_cols=[
+        "open","high","low","close","atr14","bearish_candidate",
+        "resistance_48","support_48","distance_from_resistance_atr",
+        "room_to_support_atr","sr_good_sell","h1_context","h4_context",
+        "forward_15m","forward_30m","forward_60m","forward_120m"
+    ]
+    detail=x[[c for c in detail_cols if c in x.columns]].copy()
+    detail["sample"]="PURGED"
+    detail.iloc[:max(0,split_i-purge),detail.columns.get_loc("sample")]="DISCOVERY"
+    if split_i < len(detail):
+        detail.iloc[split_i:,detail.columns.get_loc("sample")]="VALIDATION"
+    return summary,detail
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1346,12 +1424,19 @@ def main():
     h4_summary.to_csv("candle_dynamics_h4_context_summary_v94.csv", index=False)
     h4_detail.to_csv("candle_dynamics_h4_context_detail_v94.csv")
 
+    combined_summary, combined_detail = research_combined_context_v94(detailed)
+    combined_summary.to_csv("candle_dynamics_combined_context_summary_v94.csv", index=False)
+    combined_detail.to_csv("candle_dynamics_combined_context_detail_v94.csv")
+
     stability_detail, stability_summary = research_continuation_time_stability(detailed)
     stability_detail.to_csv("candle_dynamics_continuation_stability_blocks_v94.csv", index=False)
     stability_summary.to_csv("candle_dynamics_continuation_stability_summary_v94.csv", index=False)
 
     print("\nH4 CONTEXT — COMPLETED H4 CANDLES ONLY")
     print(h4_summary.to_string(index=False))
+
+    print("\nCOMBINED M15 + S/R + H1/H4 VALIDATION")
+    print(combined_summary.to_string(index=False))
 
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
