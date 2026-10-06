@@ -7,7 +7,7 @@ on:
     - cron: "2,17,32,47 * * * *"
 
 permissions:
-  contents: write 
+  contents: write
 
 concurrency:
   group: v94-entry-watch
@@ -21,10 +21,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Synchronize with latest main
         run: |
           git fetch origin main
           git reset --hard origin/main
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -40,17 +42,25 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python entry_watch_v94.py
 
-      - name: Persist watcher state
+      - name: Persist watcher and evidence state
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add entry_watch_v94.json trade_journal_v94.json
-          if git diff --cached --quiet; then
-            echo "No watcher state changes to persist."
-          else
-          git commit -m "Update V9.4 watcher state"
 
+          # Stage ALL V9.4 files that the watcher is allowed to update BEFORE
+          # attempting any rebase. This prevents "unstaged changes" failures.
+          git add -- entry_watch_v94.json trade_journal_v94.json evidence_journal_v94.json
+
+          if git diff --cached --quiet; then
+            echo "No V9.4 watcher/evidence changes to persist."
+            exit 0
+          fi
+
+          git commit -m "Update V9.4 watcher and evidence state"
+
+          # The working tree is now clean, so rebasing is safe if main advanced
+          # while this workflow was running.
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
-          fi
