@@ -27,11 +27,13 @@ from gold_model_v90 import (
     short_term_technical_trend,
 )
 from structure_risk_v94 import structure_atr_plan, valid_entry_for_min_rr
+from sr_location_research_v94 import add_sr_location_features
 from telegram_alerts_v93 import send_telegram_alert
 
 
 STATE_FILE = Path(os.getenv("V94_ENTRY_WATCH_STATE", "entry_watch_v94.json"))
 JOURNAL_FILE = Path(os.getenv("V94_TRADE_JOURNAL", "trade_journal_v94.json"))
+EVIDENCE_FILE = Path(os.getenv("V94_EVIDENCE_JOURNAL", "evidence_journal_v94.json"))
 
 M15_BARS = 1200
 M5_BARS = 200
@@ -84,6 +86,45 @@ def save_journal(journal: list) -> None:
     JOURNAL_FILE.write_text(
         json.dumps(journal, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (np.floating, float)):
+        return None if not np.isfinite(value) else float(value)
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    return value
+
+
+def append_evidence(record: dict) -> None:
+    """Append one record per completed-M15 V9.4 evaluation.
+
+    This journal is evidence-only: it records SELL, WAIT and blocked evaluations
+    without changing the live decision or risk logic. Re-runs of the same model
+    candle replace the prior evaluation instead of creating duplicate evidence.
+    """
+    rows = []
+    if EVIDENCE_FILE.exists():
+        try:
+            loaded = json.loads(EVIDENCE_FILE.read_text(encoding="utf-8"))
+            rows = loaded if isinstance(loaded, list) else []
+        except (OSError, json.JSONDecodeError):
+            rows = []
+    clean = _json_safe(record)
+    key = clean.get("evaluation_id")
+    rows = [r for r in rows if r.get("evaluation_id") != key]
+    rows.append(clean)
+    EVIDENCE_FILE.write_text(
+        json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
 
@@ -520,6 +561,22 @@ def calculate_current_setup(api_key: str) -> dict:
     )
     sell_diagnostic = diagnose_sell_quality(power)
 
+    # Step 22A evidence-only S/R snapshot. This does NOT create or veto a trade.
+    sr_row = add_sr_location_features(gold).iloc[-1]
+    sr_evidence = {
+        "sr_resistance": sr_row.get("sr_resistance"),
+        "sr_support": sr_row.get("sr_support"),
+        "sr_dist_res_atr": sr_row.get("sr_dist_res_atr"),
+        "sr_dist_sup_atr": sr_row.get("sr_dist_sup_atr"),
+        "sr_near_resistance": sr_row.get("sr_near_resistance"),
+        "sr_near_support": sr_row.get("sr_near_support"),
+        "sr_support_break": sr_row.get("sr_support_break"),
+        "sr_resistance_rejection": sr_row.get("sr_resistance_rejection"),
+        "sr_room_below_atr": sr_row.get("sr_room_below_atr"),
+        "sr_location_score": sr_row.get("sr_location_score"),
+        "sr_location_class": sr_row.get("sr_location_class"),
+    }
+
     print("V9.4 SELL QUALITY DIAGNOSTIC")
     print(
         f"Status: "
@@ -596,6 +653,19 @@ def calculate_current_setup(api_key: str) -> dict:
         "sell_candles_5": sell_diagnostic["sell_count_5"],
         "sell_candles_2": sell_diagnostic["sell_count_2"],
         "pressure_acceleration": float(power.pressure_acceleration),
+        "sell_quality_checks": sell_diagnostic.get("checks", {}),
+        "sell_quality_failed_checks": sell_diagnostic.get("reasons", []),
+        "recent_body_pressure": sell_diagnostic.get("recent_body"),
+        "recent_close_pressure": sell_diagnostic.get("recent_close"),
+        "recent_wick_pressure": sell_diagnostic.get("recent_wick"),
+        "recent_atr_impulse": sell_diagnostic.get("recent_impulse"),
+        "recent_power_score": sell_diagnostic.get("recent_power"),
+        "biquote_market_state": biquote_market["state"],
+        "biquote_sell_pressure": biquote_market["sell_pressure"],
+        "biquote_velocity_change": biquote_market["velocity_change"],
+        "biquote_event_risk": biquote_calendar["risk"],
+        "biquote_nearest_event": biquote_calendar["nearest_event"],
+        **sr_evidence,
         "structure_reason": "no directional setup",
     }
     # Hard event-risk gate:
@@ -725,6 +795,18 @@ def check_once() -> str:
     update_open_trades(gold_for_outcomes)
     previous = load_state()
     setup = calculate_current_setup(api_key)
+
+    # Step 22A: automatically record EVERY completed-M15 evaluation, including
+    # WAIT/blocked decisions. This is independent of Telegram delivery.
+    evidence = dict(setup)
+    evidence.update({
+        "schema_version": "v94-evidence-1",
+        "record_type": "EVALUATION",
+        "evaluation_id": f"{setup['model_time']}|V9.4",
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "decision": str(setup.get("side", "WAIT")).upper(),
+    })
+    append_evidence(evidence)
 
     side = str(setup["side"]).upper()
     threshold = setup.get("threshold")
