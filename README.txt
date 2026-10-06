@@ -1,12 +1,9 @@
-V9.4 SELL accuracy research update — research only.
+V9.4 SELL CONTINUATION TIME-STABILITY RESEARCH
 
-Adds high-score SELL exhaustion/reversal-veto research on top of the existing Continuation Score.
+Research only. Live V9.4 is unchanged.
+
 New outputs:
-- candle_dynamics_exhaustion_veto_v94.csv
-- candle_dynamics_exhaustion_profile_v94.csv
+- candle_dynamics_continuation_stability_blocks_v94.csv
+- candle_dynamics_continuation_stability_summary_v94.csv
 
-New console sections:
-- HIGH-SCORE SELL EXHAUSTION VETO — DISCOVERY VS VALIDATION
-- HIGH-SCORE SELL FAILURE PROFILE — SUCCESS VS FALSE SELL
-
-Tests score thresholds 65/70/75 and simple fixed vetoes for nearby support, lower-wick rejection, extreme range, and excessive reversals. Live V9.4 is unchanged.
+The test evaluates fixed Continuation Score thresholds 60/65/70/75 across six chronological blocks. It purges the final 8 M15 candles between blocks to prevent 120-minute forward outcomes from leaking across block boundaries. No threshold is re-fit on the blocks.

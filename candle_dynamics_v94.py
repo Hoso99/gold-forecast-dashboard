@@ -1106,6 +1106,86 @@ def research_sell_exhaustion_veto(d, train_fraction=0.70):
                 prof.append({"sample":sample,"score_threshold":threshold,"outcome":outcome,"signals":len(g),"avg_score":g["continuation_score"].mean() if len(g) else np.nan,"close_support_rate":g["veto_close_support"].mean() if len(g) else np.nan,"lower_wick_rejection_rate":g["veto_lower_wick"].mean() if len(g) else np.nan,"extreme_range_rate":g["veto_extreme_range"].mean() if len(g) else np.nan,"reversal_heavy_rate":g["veto_reversal_heavy"].mean() if len(g) else np.nan,"avg_exhaustion_count":g["exhaustion_count"].mean() if len(g) else np.nan,"avg_distance_support_atr":g["distance_to_support_atr"].mean() if len(g) else np.nan,"avg_distance_resistance_atr":g["distance_to_resistance_atr"].mean() if len(g) else np.nan,"avg_range_atr_ratio":g["range_atr_ratio"].mean() if len(g) else np.nan,"avg_reversals":g["reversal_count"].mean() if len(g) else np.nan,"avg_lower_wick_ratio":g["lower_wick_ratio"].mean() if len(g) else np.nan})
     return table,pd.DataFrame(prof)
 
+
+def research_continuation_time_stability(d, blocks=6):
+    """Test fixed high continuation-score thresholds across chronological blocks.
+
+    Each block is evaluated independently. The final 8 M15 candles of every block
+    except the last are purged so 120-minute forward outcomes cannot cross into the
+    next block. Thresholds are fixed in advance (60/65/70/75); no threshold is
+    selected or re-fit on these blocks. Research only; live V9.4 remains unchanged.
+    """
+    x=d.copy().sort_index()
+    if len(x) < blocks*100:
+        return pd.DataFrame(), pd.DataFrame()
+
+    def scored(frame):
+        b=frame[frame["bearish_candidate"]].copy()
+        if b.empty: return b
+        atr=b["atr14"].replace(0,np.nan)
+        eff=(b["directional_efficiency"]/0.50).clip(0,1)
+        late_strength=(-(b["seg2_net"]+b["seg3_net"]))/atr
+        persist=(late_strength/0.75).clip(0,1)*((b["seg2_net"]<0)&(b["seg3_net"]<0)).astype(float)
+        clean=(1.0-b["reversal_count"].clip(0,12)/12.0).clip(0,1)
+        accel=(b["sell_acceleration_to_close"]/atr/0.50).clip(0,1)
+        room=(b["distance_to_support_atr"]/3.0).clip(0,1).fillna(0)
+        near=(1.0-b["distance_to_resistance_atr"]/2.0).clip(0,1).fillna(0)
+        location=np.maximum(near,b["high_break_rejection"].astype(float))
+        b["continuation_score"]=(20*eff+25*persist+15*clean+15*accel+15*room+10*location)
+        return b
+
+    thresholds=(60,65,70,75)
+    edges=np.linspace(0,len(x),blocks+1,dtype=int)
+    rows=[]
+    for bi in range(blocks):
+        raw=x.iloc[edges[bi]:edges[bi+1]].copy()
+        eval_frame=raw.iloc[:-8].copy() if bi < blocks-1 and len(raw)>8 else raw
+        b=scored(eval_frame)
+        for th in thresholds:
+            g=b[b["continuation_score"]>=th].copy()
+            r={
+                "block":bi+1,"threshold":th,
+                "start":eval_frame.index.min(),"end":eval_frame.index.max(),
+                "complete_m15":len(eval_frame),"bearish_candidates":len(b),
+                "signals":len(g),"kept_pct":100*len(g)/len(b) if len(b) else np.nan,
+                "avg_score":g["continuation_score"].mean() if len(g) else np.nan,
+                "avg_mfe_60m":g["sell_mfe_60m"].mean() if len(g) else np.nan,
+                "avg_mae_60m":g["sell_mae_60m"].mean() if len(g) else np.nan,
+            }
+            for m in (15,30,60,120):
+                col=f"forward_{m}m"
+                r[f"success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan
+                r[f"avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+            r["continuation_metric"]=(.20*r["success_15m"]+.25*r["success_30m"]+.40*r["success_60m"]+.15*r["success_120m"]) if len(g) else np.nan
+            rows.append(r)
+    detail=pd.DataFrame(rows)
+
+    summary=[]
+    for th in thresholds:
+        q=detail[detail["threshold"]==th].copy()
+        valid=q[q["signals"]>=20].copy()
+        total=int(q["signals"].sum())
+        rr={
+            "threshold":th,"blocks":len(q),"blocks_with_20plus_signals":len(valid),
+            "total_signals":total,"min_block_signals":int(q["signals"].min()) if len(q) else 0,
+            "median_block_signals":q["signals"].median() if len(q) else np.nan,
+            "mean_block_metric":valid["continuation_metric"].mean() if len(valid) else np.nan,
+            "min_block_metric":valid["continuation_metric"].min() if len(valid) else np.nan,
+            "max_block_metric":valid["continuation_metric"].max() if len(valid) else np.nan,
+            "metric_std":valid["continuation_metric"].std(ddof=0) if len(valid) else np.nan,
+            "blocks_metric_above_50pct":int((valid["continuation_metric"]>0.50).sum()) if len(valid) else 0,
+            "blocks_60m_above_50pct":int((valid["success_60m"]>0.50).sum()) if len(valid) else 0,
+            "mean_success_30m":valid["success_30m"].mean() if len(valid) else np.nan,
+            "mean_success_60m":valid["success_60m"].mean() if len(valid) else np.nan,
+            "mean_success_120m":valid["success_120m"].mean() if len(valid) else np.nan,
+            "mean_forward_60m":valid["avg_forward_60m"].mean() if len(valid) else np.nan,
+            "mean_forward_120m":valid["avg_forward_120m"].mean() if len(valid) else np.nan,
+        }
+        # Conservative robustness aid: reward average continuation, penalize instability.
+        rr["robustness_score"]=(rr["mean_block_metric"]-0.50*rr["metric_std"]) if len(valid) else np.nan
+        summary.append(rr)
+    return detail,pd.DataFrame(summary).sort_values(["robustness_score","total_signals"],ascending=[False,False])
+
 def main():
     api = os.getenv("TWELVE_DATA_API_KEY", "").strip()
     if not api:
@@ -1207,6 +1287,10 @@ def main():
     exhaustion_veto.to_csv("candle_dynamics_exhaustion_veto_v94.csv", index=False)
     exhaustion_profile.to_csv("candle_dynamics_exhaustion_profile_v94.csv", index=False)
 
+    stability_detail, stability_summary = research_continuation_time_stability(detailed)
+    stability_detail.to_csv("candle_dynamics_continuation_stability_blocks_v94.csv", index=False)
+    stability_summary.to_csv("candle_dynamics_continuation_stability_summary_v94.csv", index=False)
+
     print("\nSELL FILTER COMPARISON")
     print(sell_filter_comparison.to_string(index=False))
     print("\nDIRECTIONAL EFFICIENCY THRESHOLD COMPARISON")
@@ -1240,6 +1324,10 @@ def main():
     print(exhaustion_veto.to_string(index=False))
     print("\nHIGH-SCORE SELL FAILURE PROFILE — SUCCESS VS FALSE SELL")
     print(exhaustion_profile.to_string(index=False))
+    print("\nSELL CONTINUATION SCORE — CHRONOLOGICAL STABILITY BLOCKS")
+    print(stability_detail.to_string(index=False))
+    print("\nSELL CONTINUATION SCORE — STABILITY SUMMARY")
+    print(stability_summary.to_string(index=False))
     print("\nSELL COMBINATION RESEARCH")
     print(sell_combinations.head(30).to_string(index=False))
     print("\nDETAILED INTRACANDLE SUMMARY")
