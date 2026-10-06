@@ -1242,6 +1242,45 @@ def research_h4_context(d, train_fraction=0.70):
     return pd.DataFrame(rows),detail
 
 
+
+def research_h1_context(d, train_fraction=0.70):
+    """Research-only H1 context; uses only fully completed H1 candles."""
+    x=d.copy().sort_index()
+    h1=x[["open","high","low","close"]].resample("1h",label="left",closed="left").agg(
+        {"open":"first","high":"max","low":"min","close":"last"}).dropna()
+    counts=x["close"].resample("1h",label="left",closed="left").count()
+    h1=h1[counts.reindex(h1.index).eq(4)].copy()
+    h1["h1_end"]=h1.index+pd.Timedelta(hours=1)
+    h1["ema_fast"]=h1["close"].ewm(span=6,adjust=False).mean()
+    h1["ema_slow"]=h1["close"].ewm(span=12,adjust=False).mean()
+    bearish=(h1["close"]<h1["open"])&(h1["close"]<h1["ema_fast"])&(h1["ema_fast"]<=h1["ema_slow"])
+    bullish=(h1["close"]>h1["open"])&(h1["close"]>h1["ema_fast"])&(h1["ema_fast"]>=h1["ema_slow"])
+    h1["h1_context"]=np.where(bearish,"BEARISH",np.where(bullish,"BULLISH","NEUTRAL"))
+    left=x.reset_index(); left=left.rename(columns={left.columns[0]:"signal_time"}).sort_values("signal_time")
+    right=h1.reset_index(); right=right.rename(columns={right.columns[0]:"h1_start"}).sort_values("h1_end")
+    merged=pd.merge_asof(left,right[["h1_start","h1_end","h1_context"]],
+                         left_on="signal_time",right_on="h1_end",direction="backward").set_index("signal_time")
+    valid=merged["h1_end"].notna()
+    if valid.any() and not (merged.loc[valid,"h1_end"]<=merged.loc[valid].index).all():
+        raise AssertionError("H1 lookahead detected")
+    n=len(merged); split_i=int(n*train_fraction); purge=8
+    discovery=merged.iloc[:max(0,split_i-purge)].copy(); validation=merged.iloc[split_i:].copy()
+    rows=[]
+    for sample,frame in (("DISCOVERY",discovery),("VALIDATION",validation),("ALL",merged)):
+        base=frame[frame["bearish_candidate"]].copy()
+        for ctx in ("ALL","BEARISH","NEUTRAL","BULLISH"):
+            g=base if ctx=="ALL" else base[base["h1_context"]==ctx]
+            row={"sample":sample,"h1_context":ctx,"bearish_candidates":len(base),"signals":len(g),
+                 "kept_pct":100*len(g)/len(base) if len(base) else np.nan}
+            for m in (15,30,60,120):
+                col=f"forward_{m}m"
+                row[f"success_{m}m"]=(g[col]<=0).mean() if len(g) else np.nan
+                row[f"avg_forward_{m}m"]=g[col].mean() if len(g) else np.nan
+            rows.append(row)
+    detail=merged[["open","high","low","close","bearish_candidate","h1_start","h1_end","h1_context",
+                   "forward_15m","forward_30m","forward_60m","forward_120m"]].copy()
+    return pd.DataFrame(rows),detail
+
 def research_combined_context_v94(d, train_fraction=0.70):
     """Research-only combined M15 + S/R + H1/H4 context validation.
 
