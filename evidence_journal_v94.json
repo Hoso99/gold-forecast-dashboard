@@ -2441,15 +2441,15 @@
   {
     "basis": "SELL-only mode: no SELL signal",
     "biquote_event_risk": "NORMAL",
-    "biquote_market_state": "COOLING",
+    "biquote_market_state": "BUILDING",
     "biquote_nearest_event": {
-      "minutes": 880.9880495833333,
+      "minutes": 869.1107354333333,
       "name": "EIA Crude Oil Stocks Change",
       "relevance": "HIGH",
       "risk": "NORMAL"
     },
-    "biquote_sell_pressure": 38.64795918365342,
-    "biquote_velocity_change": -56.62517289068095,
+    "biquote_sell_pressure": 41.08967082860542,
+    "biquote_velocity_change": 115.75510204079178,
     "buy_power": 0.583001639841233,
     "decision": "WAIT",
     "entry_reference": 4167.11591,
@@ -2462,7 +2462,7 @@
     "recent_power_score": 0.31762806731944015,
     "recent_wick_pressure": -0.04035637768380292,
     "record_type": "EVALUATION",
-    "recorded_at_utc": "2026-10-06T23:49:02.414845+00:00",
+    "recorded_at_utc": "2026-10-07T00:00:54.805048+00:00",
     "schema_version": "v94-evidence-1",
     "sell_candles_10": 2,
     "sell_candles_2": 1,
