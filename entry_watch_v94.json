@@ -1,10 +1,12 @@
 {
-  "basis": "SELL-only mode: no SELL signal",
-  "buy_power": 0.48149,
-  "entry_reference": 4142.2272,
-  "model_time": "2026-10-07T04:15:00+00:00",
-  "sell_power": 0.51851,
-  "side": "WAIT",
-  "structure_reason": "no directional setup",
-  "threshold": null
+  "basis": "10-candle SELL + quality CONFIRMED",
+  "buy_power": 0.373378,
+  "entry_reference": 4134.9653,
+  "last_alert_key": "2026-10-07T04:45:00+00:00|SELL",
+  "last_alert_price": 4134.9653,
+  "model_time": "2026-10-07T04:45:00+00:00",
+  "sell_power": 0.626622,
+  "side": "SELL",
+  "structure_reason": "10-candle SELL power + mandatory structure/ATR SL + 2R TP",
+  "threshold": 4134.9653
 }
