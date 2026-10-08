@@ -29,12 +29,36 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: python candle_dynamics_v94.py
 
-      - name: Persist dynamics results
+      - name: Verify reusable M1 history
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+          path = Path('candle_dynamics_m1_v94.csv')
+          if not path.is_file():
+              raise SystemExit('Research script did not save candle_dynamics_m1_v94.csv')
+          df = pd.read_csv(path)
+          expected = {'datetime', 'open', 'high', 'low', 'close'}
+          if not expected.issubset(df.columns) or df.empty:
+              raise SystemExit(f'Invalid M1 CSV columns or no rows: {list(df.columns)}')
+          print(f'M1 history ready: {len(df):,} rows; {path.stat().st_size:,} bytes')
+          PY
+
+      - name: Downloadable historical M1 candle data
+        uses: actions/upload-artifact@v4
+        with:
+          name: v94-historical-m1-candles
+          path: candle_dynamics_m1_v94.csv
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
+
+      - name: Persist dynamics results (exclude raw M1 history)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add candle_dynamics_*.csv || true
+          git restore --staged candle_dynamics_m1_v94.csv 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "No dynamics result changes to commit."
