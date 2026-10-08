@@ -1,0 +1,39 @@
+name: V9.4 Forward M1 Collector (Research Only)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '3,18,33,48 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: v94-forward-m1-collector
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch completed M1 candles
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python research/collect_v94_m1.py
+      - name: Upload dataset snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: v94-forward-m1-${{ github.run_id }}
+          path: research/data/v94_forward_m1.csv
+          retention-days: 30
+      - name: Save dataset to repository
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/data/v94_forward_m1.csv
+          if git diff --cached --quiet; then echo 'No new candles'; exit 0; fi
+          git commit -m 'Collect V9.4 research M1 candles'
+          git push
