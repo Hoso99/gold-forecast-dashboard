@@ -1,0 +1,33 @@
+name: V9.4 M15 M5 Full-History Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas requests
+      - name: Download historical M1 using existing research script
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python candle_dynamics_v94.py
+      - name: Verify candle history
+        run: test -s candle_dynamics_m1_v94.csv
+      - name: Run M15 to M5 full-history comparison
+        run: python full_history_m15_m5.py | tee full_history_m15_m5_summary.txt
+      - name: Upload research output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v94-m15-m5-fullhistory-results
+          path: |
+            full_history_m15_m5.csv
+            full_history_m15_m5_summary.txt
+          if-no-files-found: warn
+          retention-days: 30
