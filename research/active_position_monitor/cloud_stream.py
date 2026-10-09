@@ -34,6 +34,7 @@ async def session():
         await ws.send(json.dumps({"action":"subscribe","params":{"symbols":SYMBOL}}))
         log.info("Connected; subscription requested for %s",SYMBOL)
         last_received=0.
+        connected_since=time.monotonic()
         last_log=0.
         last_heartbeat=time.monotonic()
         subscribed=False
@@ -47,7 +48,7 @@ async def session():
             except asyncio.TimeoutError:
                 if last_received and now-last_received>MAX_AGE:
                     raise ConnectionError("No fresh price events; reconnecting")
-                if not last_received and now-last_heartbeat>60:
+                if not last_received and now-connected_since>60:
                     raise ConnectionError("No price events after subscription")
                 continue
             event=json.loads(message)
