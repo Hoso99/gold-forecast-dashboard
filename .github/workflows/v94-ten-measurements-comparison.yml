@@ -32,6 +32,9 @@ jobs:
       - name: Compare forward SELL outcomes at 15, 30 and 60 minutes
         run: |
           python research/ten_measurements/forward_outcomes.py --m1 research/v94_stop_comparison/v94_forward_m1.csv --snapshots research/ten_measurements/decision_snapshots.jsonl --output research/ten_measurements/forward_analysis
+      - name: Stratify SELL outcomes by trend, reversal and support proximity
+        run: |
+          python research/ten_measurements/stratify_sell.py --input research/ten_measurements/forward_analysis/forward_outcomes.csv --output research/ten_measurements/forward_analysis/sell_strata.csv
       - name: Upload timestamp-safe decision snapshots
         uses: actions/upload-artifact@v4
         with:
