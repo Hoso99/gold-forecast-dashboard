@@ -30,6 +30,7 @@ jobs:
         run: |
           cd research/v94_stop_comparison
           python compare_stop_options.py --input v94_forward_m1.csv --output comparison_output
+          python forward_progress.py
       - name: Upload comparison CSVs
         if: always()
         uses: actions/upload-artifact@v4
