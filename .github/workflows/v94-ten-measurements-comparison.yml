@@ -1,6 +1,8 @@
 name: V9.4 Ten Measurements Decision Comparison
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '45 */3 * * *'
   pull_request:
     paths:
       - 'research/ten_measurements/**'
@@ -8,6 +10,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: v94-ten-measurements-comparison
+  cancel-in-progress: false
 jobs:
   compare:
     runs-on: ubuntu-latest
