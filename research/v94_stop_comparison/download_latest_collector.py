@@ -5,6 +5,7 @@ import os
 import pathlib
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 
 repo = os.environ['GITHUB_REPOSITORY']
 token = os.environ['GH_TOKEN']
@@ -47,14 +48,15 @@ for page in range(1, 6):
 
 matches = [a for a in items if not a.get('expired')
            and a.get('name', '').startswith('v94-forward-m1')
-           and a.get('workflow_run', {}).get('head_branch') == os.environ.get('GITHUB_REF_NAME', 'main')]
+           and a.get('workflow_run', {}).get('head_branch') == 'main']
 if not matches:
-    matches = [a for a in items if not a.get('expired')
-               and a.get('name', '').startswith('v94-forward-m1')]
-if not matches:
-    raise SystemExit('No non-expired v94-forward-m1 artifact found in latest 500 artifacts.')
+    raise SystemExit('No non-expired main-branch collector artifact in latest 500 artifacts.')
 
 a = max(matches, key=lambda x: x.get('created_at', ''))
+created = datetime.fromisoformat(a['created_at'].replace('Z', '+00:00'))
+age_hours = (datetime.now(timezone.utc) - created).total_seconds() / 3600
+if age_hours < 0 or age_hours > 8:
+    raise SystemExit(f'Collector artifact too old or future-dated: {age_hours:.2f}h; maximum 8h')
 raw = get(a['archive_download_url'])
 with zipfile.ZipFile(io.BytesIO(raw)) as z:
     names = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == 'v94_forward_m1.csv']
@@ -65,4 +67,4 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
 out = pathlib.Path('research/v94_stop_comparison/v94_forward_m1.csv')
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_bytes(data)
-print(f"Downloaded collector artifact id={a['id']} created={a['created_at']} rows={len(data.splitlines())-1}")
+print(f"Downloaded collector artifact id={a['id']} created={a['created_at']} age_hours={age_hours:.2f} rows={len(data.splitlines())-1} collector_branch=main")
