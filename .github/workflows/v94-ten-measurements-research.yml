@@ -1,0 +1,23 @@
+name: V9.4 Ten Measurements Research (Manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run ten-measurement unit tests
+        run: python -m unittest discover -s research/ten_measurements -p 'test_*.py' -v
+      - name: Evaluate ten measurements using stored completed M1 candles
+        run: python research/ten_measurements/evaluate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v94-ten-measurements-${{ github.run_id }}
+          path: research/ten_measurements/latest.json
+          retention-days: 30

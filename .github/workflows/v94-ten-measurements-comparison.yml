@@ -1,0 +1,53 @@
+name: V9.4 Ten Measurements Decision Comparison
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 */3 * * *'
+  pull_request:
+    paths:
+      - 'research/ten_measurements/**'
+      - '.github/workflows/v94-ten-measurements-comparison.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v94-ten-measurements-comparison
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pandas numpy
+      - name: Download latest collected M1 research artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python research/v94_stop_comparison/download_latest_collector.py
+      - name: Rebuild V9.4 research decisions on same M1 sample
+        run: |
+          cd research/v94_stop_comparison
+          python compare_stop_options.py --input v94_forward_m1.csv --output comparison_output
+      - name: Join past measurements to SELL and WAIT decisions
+        run: |
+          python research/ten_measurements/compare_decisions.py --m1 research/v94_stop_comparison/v94_forward_m1.csv --decisions research/v94_stop_comparison/comparison_output/decisions.csv --output research/ten_measurements/decision_snapshots.jsonl
+      - name: Compare forward SELL outcomes at 15, 30 and 60 minutes
+        run: |
+          python research/ten_measurements/forward_outcomes.py --m1 research/v94_stop_comparison/v94_forward_m1.csv --snapshots research/ten_measurements/decision_snapshots.jsonl --output research/ten_measurements/forward_analysis
+      - name: Stratify SELL outcomes by trend, reversal and support proximity
+        run: |
+          python research/ten_measurements/stratify_sell.py --input research/ten_measurements/forward_analysis/forward_outcomes.csv --output research/ten_measurements/forward_analysis/sell_strata.csv
+      - name: Check non-overlapping SELL horizons
+        run: |
+          python research/ten_measurements/nonoverlap_check.py --input research/ten_measurements/forward_analysis/forward_outcomes.csv --output research/ten_measurements/forward_analysis/nonoverlap.csv
+      - name: Upload timestamp-safe decision snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: v94-ten-measurement-comparison-${{ github.run_id }}
+          path: |
+            research/ten_measurements/decision_snapshots.jsonl
+            research/ten_measurements/forward_analysis/*.csv
+          retention-days: 30

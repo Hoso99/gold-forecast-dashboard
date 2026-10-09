@@ -1,0 +1,24 @@
+name: V9.4 Stage 1 Spot Pressure Snapshot (Manual Research Test)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Manual M1 snapshot only (not the cloud streaming monitor)
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python research/active_position_monitor/stage1_monitor.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: v94-stage1-manual-${{ github.run_id }}
+          path: research/active_position_monitor/pressure_snapshot.csv
+          retention-days: 30

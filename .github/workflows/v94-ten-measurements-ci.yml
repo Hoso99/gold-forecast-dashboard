@@ -1,0 +1,27 @@
+name: V9.4 Ten Measurements Research CI
+on:
+  pull_request:
+    paths:
+      - 'research/ten_measurements/**'
+      - '.github/workflows/v94-ten-measurements-ci.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest discover -s research/ten_measurements -p 'test_*.py' -v
+      - name: Evaluate stored M1 candles
+        run: python research/ten_measurements/evaluate.py
+      - name: Upload research output
+        uses: actions/upload-artifact@v4
+        with:
+          name: ten-measurements-ci-${{ github.run_id }}
+          path: research/ten_measurements/latest.json
+          retention-days: 7
