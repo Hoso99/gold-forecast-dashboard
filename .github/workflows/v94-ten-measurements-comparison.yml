@@ -35,6 +35,9 @@ jobs:
       - name: Stratify SELL outcomes by trend, reversal and support proximity
         run: |
           python research/ten_measurements/stratify_sell.py --input research/ten_measurements/forward_analysis/forward_outcomes.csv --output research/ten_measurements/forward_analysis/sell_strata.csv
+      - name: Check non-overlapping SELL horizons
+        run: |
+          python research/ten_measurements/nonoverlap_check.py --input research/ten_measurements/forward_analysis/forward_outcomes.csv --output research/ten_measurements/forward_analysis/nonoverlap.csv
       - name: Upload timestamp-safe decision snapshots
         uses: actions/upload-artifact@v4
         with:
