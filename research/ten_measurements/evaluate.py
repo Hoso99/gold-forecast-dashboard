@@ -112,7 +112,8 @@ def calculate(rows):
            "sell_power_delta_pp":round(sell_now-sell_before,2),
            "active_position_known":False,"early_exit_signal":None}
     }
-    return {"as_of_m1_start_utc":rows[-1][0].isoformat(),"spot_close":close,
+    return {"as_of_m1_start_utc":rows[-1][0].isoformat(),
+            "as_of_m1_close_utc":(rows[-1][0]+dt.timedelta(minutes=1)).isoformat(),"spot_close":close,
             "research_only":True,"measurements":measurements}
 
 def main():
@@ -124,7 +125,7 @@ def main():
     p.add_argument("--macro",default=None)
     args=p.parse_args()
     result=calculate(bars_from_csv(args.input))
-    enrich(result["measurements"],result["as_of_m1_start_utc"],args.events,args.quotes,args.macro)
+    enrich(result["measurements"],result["as_of_m1_close_utc"],args.events,args.quotes,args.macro)
     out=Path(args.output);out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps({"as_of":result["as_of_m1_start_utc"],
