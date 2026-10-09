@@ -54,12 +54,12 @@ def run(input_file,output,cap_atr=4.,pullback_atr=.5,wait_minutes=30,cost_bps=10
                                   'fill_time_utc':start.isoformat() if start is not None else ''}
             if not signal_ok:
                 diagnostics[name]='signal_filters_failed'
+            elif needs_fill and start is None:
+                diagnostics[name]='pullback_not_filled'
             elif not all(np.isfinite(v) for v in (e,s,t)):
                 diagnostics[name]='missing_entry_stop_or_structural_target'
             elif not (s>e>t):
                 diagnostics[name]='invalid_stop_or_target_side'
-            elif needs_fill and start is None:
-                diagnostics[name]='pullback_not_filled'
             elif cap and (not np.isfinite(atr) or risk/atr>cap_atr):
                 diagnostics[name]='stop_distance_cap_exceeded'
             elif rr<2.0:
@@ -74,6 +74,7 @@ def run(input_file,output,cap_atr=4.,pullback_atr=.5,wait_minutes=30,cost_bps=10
         # A pullback improves entry price while retaining the original protective stop.
         # Use only M1 bars AFTER the decision; fill at limit after touch, next minute.
         pullback_start=None
+        pullback_entry=np.nan
         if signal_ok and np.isfinite(atr) and np.isfinite(entry):
             desired=entry+pullback_atr*atr
             future=m1.loc[(m1.index>=ts)&(m1.index<ts+pd.Timedelta(minutes=wait_minutes))]
@@ -82,7 +83,10 @@ def run(input_file,output,cap_atr=4.,pullback_atr=.5,wait_minutes=30,cost_bps=10
                 candidate_start=hits[0]+pd.Timedelta(minutes=1)
                 if candidate_start in m1.index and candidate_start<ts+pd.Timedelta(minutes=wait_minutes):
                     pullback_start=candidate_start
-            assess('pullback_m15',pullback_start,desired,stop,target,'pullback touch; next minute',needs_fill=True)
+                    # Conservative, observable market entry at the next M1 OPEN;
+                    # never assume the previous limit price is still fillable.
+                    pullback_entry=float(m1.loc[candidate_start,'open'])
+            assess('pullback_m15',pullback_start,pullback_entry,stop,target,'next-minute market open after pullback touch',needs_fill=True)
         else:
             assess('pullback_m15',None,np.nan,stop,target,'pullback unavailable',needs_fill=True)
         m5_stop=m5_plan(m5.loc[:ts],entry,cost_bps) if signal_ok else None
