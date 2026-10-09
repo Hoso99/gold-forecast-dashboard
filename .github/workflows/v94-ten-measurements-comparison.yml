@@ -29,9 +29,14 @@ jobs:
       - name: Join past measurements to SELL and WAIT decisions
         run: |
           python research/ten_measurements/compare_decisions.py --m1 research/v94_stop_comparison/v94_forward_m1.csv --decisions research/v94_stop_comparison/comparison_output/decisions.csv --output research/ten_measurements/decision_snapshots.jsonl
+      - name: Compare forward SELL outcomes at 15, 30 and 60 minutes
+        run: |
+          python research/ten_measurements/forward_outcomes.py --m1 research/v94_stop_comparison/v94_forward_m1.csv --snapshots research/ten_measurements/decision_snapshots.jsonl --output research/ten_measurements/forward_analysis
       - name: Upload timestamp-safe decision snapshots
         uses: actions/upload-artifact@v4
         with:
           name: v94-ten-measurement-comparison-${{ github.run_id }}
-          path: research/ten_measurements/decision_snapshots.jsonl
+          path: |
+            research/ten_measurements/decision_snapshots.jsonl
+            research/ten_measurements/forward_analysis/*.csv
           retention-days: 30
