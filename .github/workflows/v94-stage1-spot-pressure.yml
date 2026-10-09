@@ -1,13 +1,8 @@
-name: V9.4 Stage 1 Spot Pressure Monitor (Research Only)
+name: V9.4 Stage 1 Spot Pressure Snapshot (Manual Research Test)
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
 permissions:
   contents: read
-concurrency:
-  group: v94-stage1-spot-pressure
-  cancel-in-progress: false
 jobs:
   observe:
     runs-on: ubuntu-latest
@@ -17,14 +12,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Observe spot XAUUSD pressure (no trading or alerts)
+      - name: Manual M1 snapshot only (not the cloud streaming monitor)
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: python research/active_position_monitor/stage1_monitor.py
-      - name: Upload pressure snapshot
+      - uses: actions/upload-artifact@v4
         if: success()
-        uses: actions/upload-artifact@v4
         with:
-          name: v94-stage1-pressure-${{ github.run_id }}
+          name: v94-stage1-manual-${{ github.run_id }}
           path: research/active_position_monitor/pressure_snapshot.csv
           retention-days: 30
