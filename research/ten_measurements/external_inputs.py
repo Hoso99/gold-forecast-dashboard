@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 
 def timestamp(value):
-    t=dt.datetime.fromisoformat(value.replace("Z","+00:00"))
+    t=value if isinstance(value,dt.datetime) else dt.datetime.fromisoformat(value.replace("Z","+00:00"))
     if t.tzinfo is None: raise ValueError("UTC offset required")
     return t.astimezone(dt.timezone.utc)
 
