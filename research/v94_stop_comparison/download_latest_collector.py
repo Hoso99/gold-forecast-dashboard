@@ -56,8 +56,11 @@ if not matches:
 a = max(matches, key=lambda x: x.get('created_at', ''))
 created = datetime.fromisoformat(a['created_at'].replace('Z', '+00:00'))
 age_hours = (datetime.now(timezone.utc) - created).total_seconds() / 3600
-if age_hours < 0 or age_hours > 8:
-    raise SystemExit(f'Collector artifact too old or future-dated: {age_hours:.2f}h; maximum 8h')
+now_for_age = datetime.now(timezone.utc)
+weekend_for_age = now_for_age.weekday() == 5 or (now_for_age.weekday() == 6 and now_for_age.hour < 22) or (now_for_age.weekday() == 4 and now_for_age.hour >= 22)
+max_artifact_hours = 72 if weekend_for_age else 8
+if age_hours < 0 or age_hours > max_artifact_hours:
+    raise SystemExit(f'Collector artifact too old or future-dated: {age_hours:.2f}h; maximum {max_artifact_hours}h')
 raw = get(a['archive_download_url'])
 with zipfile.ZipFile(io.BytesIO(raw)) as z:
     names = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == 'v94_forward_m1.csv']
