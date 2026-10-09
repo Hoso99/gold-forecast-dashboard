@@ -9,6 +9,7 @@ import datetime as dt
 import json
 import math
 from pathlib import Path
+from external_inputs import enrich
 
 def mean(xs):
     return sum(xs)/len(xs) if xs else None
@@ -118,8 +119,12 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--input",default="research/data/v94_forward_m1.csv")
     p.add_argument("--output",default="research/ten_measurements/latest.json")
+    p.add_argument("--events",default=None)
+    p.add_argument("--quotes",default=None)
+    p.add_argument("--macro",default=None)
     args=p.parse_args()
     result=calculate(bars_from_csv(args.input))
+    enrich(result["measurements"],result["as_of_m1_start_utc"],args.events,args.quotes,args.macro)
     out=Path(args.output);out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps({"as_of":result["as_of_m1_start_utc"],
