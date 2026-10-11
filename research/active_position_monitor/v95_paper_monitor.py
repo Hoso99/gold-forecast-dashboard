@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 from v95_indicators import diagnostics
 from v95_biquote import fetch_context
 from v95_research_votes import votes
+from v95_telegram_format import format_alert
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -183,6 +184,7 @@ def evaluate(rows,state):
             paper_pnl=(entry-hypothetical_fill)*pos.get("paper_units",0.0)
             if paper_pnl<0:
                 state["realized_paper_loss"]+=-paper_pnl
+            state["last_closed_position"]=dict(pos, exit_action=action, hypothetical_fill=hypothetical_fill, paper_pnl=paper_pnl)
             state["paper_position"]=None
         note=f"paper entry={entry:.2f}, price={price:.2f}, R={r:.2f}, SL={pos['current_stop']:.2f}"
         return state,action,note
