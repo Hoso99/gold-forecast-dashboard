@@ -745,6 +745,10 @@ def calculate_current_setup(api_key: str) -> dict:
         entry_price=entry,
     )
 
+    if plan.get("status") != "ACTIVE":
+        result["structure_reason"] = str(plan.get("reason", "Structure/ATR plan not active"))
+        return result
+
     stop_loss = float(plan.get("stop", np.nan))
     swing_high = float(plan.get("swing", np.nan))
     atr14 = float(plan.get("atr", np.nan))
