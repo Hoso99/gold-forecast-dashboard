@@ -27,3 +27,21 @@ jobs:
         run: python -m py_compile entry_watch_v94.py research/audits/test_v94_reliability.py research/audits/replay_structure_v94.py research/audits/test_v94_replay.py
       - name: Run static regression tests (no API keys or orders)
         run: python -m unittest discover -s research/audits -p 'test_v94_*.py' -v
+      - name: Inspect historical data schema (research only)
+        run: |
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          root = Path(".")
+          trades = json.loads((root / "trade_journal_v94.json").read_text())
+          sells = [t for t in trades if t.get("side") == "SELL"]
+          print("SELL records:", len(sells))
+          print("Original ATR multiple recorded:", sum(t.get("atr_multiple") is not None for t in sells))
+          for name in ("candle_dynamics_m15_v94.csv", "candle_window_comparison_v94.csv"):
+              with (root / name).open(newline="", encoding="utf-8-sig") as stream:
+                  reader = csv.DictReader(stream)
+                  print(name, "columns:", reader.fieldnames)
+                  for row in reader:
+                      print("First row:", row)
+                      break
+          PY
