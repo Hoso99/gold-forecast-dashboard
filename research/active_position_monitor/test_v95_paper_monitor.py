@@ -67,6 +67,23 @@ class PaperMonitorTests(unittest.TestCase):
         self.assertEqual(pressure([{"o":10,"c":9}]*10),100)
         self.assertEqual(pivot({"h":12,"l":6,"c":9}),9)
 
+    def test_biquote_calendar_includes_oil_and_cyprus_time(self):
+        from v95_biquote import event_context
+        now=dt.datetime(2026,10,12,12,0,tzinfo=dt.timezone.utc)
+        events=[{"countryCode":"US","name":"Crude Oil Inventories",
+                 "importance":"high","timeMode":"exact","time":"2026-10-12T12:30:00Z"}]
+        context=event_context(events,now)
+        self.assertEqual(context["risk"],"IMMINENT")
+        self.assertEqual(len(context["events"]),1)
+        self.assertIn("cyprus",context["events"][0])
+
+    def test_biquote_ignores_tentative_clock(self):
+        from v95_biquote import event_context
+        now=dt.datetime(2026,10,12,12,0,tzinfo=dt.timezone.utc)
+        events=[{"countryCode":"US","name":"FOMC","timeMode":"tentative",
+                 "time":"2026-10-12T12:30:00Z"}]
+        self.assertEqual(event_context(events,now)["risk"],"NORMAL")
+
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
             with patch.object(mod,"urlopen") as network:
