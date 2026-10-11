@@ -43,3 +43,12 @@ Status definitions: RESEARCH = exploratory code or analysis exists, NOT validate
 4. Verify V9.5 alerts and deployment separately, only after user approval.
 
 **Scope: research branch only. Never merge, deploy or modify live V9.4 without explicit user approval.**
+
+## Progress update — 2026-10-11
+- [x] RESEARCH ONLY: M1-derived M5/M15 completeness audit executed in CI; 12 M1 gaps, 12 incomplete M5, 11 incomplete M15. Timestamp semantics still unverified.
+- [x] RESEARCH ONLY: M15 vs mandatory M5 confirmation compared on chronological holdout (421 M15 vs 274 confirmed); M5 worsened 60-minute down-rate (48.46% to 46.72%) and improved 120-minute down-rate (45.61% to 47.08%). Not validated for trading.
+- [x] RESEARCH CODE ADDED, NOT EXECUTED: delayed M5 reversal-warning study at research/audits/v95_m5_reversal_warning_study.py.
+- [ ] Run and inspect reversal-warning study; workflow registration attempt was blocked, so do not mark it tested.
+- [ ] Verify M1 timestamp semantics with source/provider and audit alignment before interpreting M5 warning as causal.
+- [ ] Build cost-aware trade-level SL/TP, conservative same-bar resolution, and independent holdout before live promotion.
+- [ ] Complete remaining signal, risk, Telegram and deployment checklist items above; do not deploy without explicit approval.
