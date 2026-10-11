@@ -34,6 +34,14 @@ class TestV95ExitVariants(unittest.TestCase):
         self.assertEqual(v["outcome"],"STOP")
         self.assertTrue(v["partial"])
 
+    def test_partial_final_target_not_filled_on_activation_minute(self):
+        b=[dict(open=100,high=100.5,low=93,close=95)]
+        v=simulate_sell(b,100,103,atr_m5=1,mode="partial_fixed")
+        self.assertEqual(v["outcome"],"TIMEOUT")
+        self.assertTrue(v["partial"])
+        # Half position at +1R, half marked at close; no retroactive +2R fill.
+        self.assertAlmostEqual(v["net_r"],(1.5+2.5-.30)/3,places=5)
+
     def test_predeclared_variants(self):
         a=variants()
         self.assertEqual(len(a),31)
