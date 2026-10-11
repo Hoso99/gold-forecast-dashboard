@@ -155,7 +155,8 @@ def evaluate(rows,state):
         elif pos.get("partial_acknowledged") and pos["current_stop"]>entry:
             action="MOVE_SL"
             pos["current_stop"]=entry
-        elif (latest["l"]<=entry-risk and not pos.get("partial_acknowledged")\n              and not pos.get("partial_proposed")):
+        elif (latest["l"]<=entry-risk and not pos.get("partial_acknowledged")
+              and not pos.get("partial_proposed")):
             action="PARTIAL_EXIT_PROPOSED"
             pos["partial_proposed"]=True
         else:
