@@ -133,7 +133,7 @@ def update_open_trades(gold) -> None:
     changed = False
 
     for trade in journal:
-        if trade.get("status") != "OPEN":
+        if trade.get("status") not in {"OPEN", "PAPER_OPEN"}:
             continue
 
         side = str(trade.get("side", "")).upper()
@@ -946,7 +946,9 @@ def check_once() -> str:
                     "sell_candles_2": setup["sell_candles_2"],
                     "pressure_acceleration": round(float(setup["pressure_acceleration"]), 4),
                     "basis": setup["basis"],
-                    "status": "SIGNAL_ALERTED",
+                    "status": "PAPER_OPEN",
+                    "execution_confirmed": False,
+                    "record_type": "HYPOTHETICAL_SIGNAL",
                 })
                 save_journal(journal)
     
