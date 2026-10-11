@@ -38,6 +38,23 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(result["action"], "REVIEW_EXIT")
         self.assertEqual(position["current_stop"], 115)
 
+    def test_h4_is_advisory_not_entry_gate(self):
+        """Check the actual SELL gate, not just its comments or log labels."""
+        import ast
+        from pathlib import Path
+        source = Path(__file__).with_name("v95_paper_monitor.py").read_text()
+        tree = ast.parse(source)
+        evaluate = next(n for n in tree.body
+                        if isinstance(n, ast.FunctionDef) and n.name == "evaluate")
+        gates = [n.test for n in ast.walk(evaluate)
+                 if isinstance(n, ast.If)
+                 and "breakout and trend" in ast.unparse(n.test)]
+        self.assertEqual(len(gates), 1)
+        gate = ast.unparse(gates[0])
+        self.assertIn("trend", gate)
+        self.assertIn("m5_bearish", gate)
+        self.assertNotIn("h4_bearish", gate)
+
     def test_insufficient_data_wait(self):
         self.assertEqual(entry_diagnostics([], [], [])["status"], "INSUFFICIENT_DATA")
         self.assertEqual(exit_diagnostics([], [], {})["status"], "INSUFFICIENT_DATA")
