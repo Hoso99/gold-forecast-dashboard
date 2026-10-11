@@ -32,6 +32,7 @@ class V94WatcherStaticRegression(unittest.TestCase):
         source = ast.get_source_segment(self.source, self.functions["check_once"])
         self.assertNotIn("reached = True", source)
         self.assertIn("threshold_reached(", source)
+        self.assertNotIn("result[\"threshold\"] = entry", ast.get_source_segment(self.source, self.functions["calculate_current_setup"]))
 
     def test_alert_active_is_initialized(self):
         """Regression: deduplicated alert must not reference unbound active."""
@@ -51,6 +52,16 @@ class V94WatcherStaticRegression(unittest.TestCase):
         """Research alerts must not masquerade as broker-confirmed trades."""
         source = ast.get_source_segment(self.source, self.functions["check_once"])
         self.assertNotIn('"status": "OPEN"', source)
+        self.assertIn('"record_type": "HYPOTHETICAL_SIGNAL"', source)
+
+    def test_closed_market_has_clean_skip(self):
+        source = ast.get_source_segment(self.source, self.functions["check_once"])
+        self.assertIn("SKIPPED_MARKET_CLOSED", source)
+
+    def test_duplicate_alert_returns_before_delivery(self):
+        source = ast.get_source_segment(self.source, self.functions["check_once"])
+        self.assertIn("ALREADY_ALERTED", source)
+        self.assertLess(source.index("ALREADY_ALERTED"), source.index("send_telegram_alert("))
 
 
 if __name__ == "__main__":
