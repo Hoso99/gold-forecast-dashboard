@@ -155,7 +155,7 @@ def evaluate(rows,state):
         elif pos.get("partial_acknowledged") and pos["current_stop"]>entry:
             action="MOVE_SL"
             pos["current_stop"]=entry
-        elif latest["l"]<=entry-risk and not pos.get("partial_acknowledged"):
+        elif (latest["l"]<=entry-risk and not pos.get("partial_acknowledged")\n              and not pos.get("partial_proposed")):
             action="PARTIAL_EXIT_PROPOSED"
             pos["partial_proposed"]=True
         else:
@@ -182,9 +182,17 @@ def evaluate(rows,state):
     if stop<=price:
         return state,"WAIT_DATA","Invalid structure/ATR stop"
     target=price-2*(stop-price)
+    # Position sizing requires a verified paper equity amount. Never invent 2% risk.
+    paper_equity=float(os.getenv("V95_PAPER_EQUITY","0"))
+    if not math.isfinite(paper_equity) or paper_equity<=0:
+        return state,"WAIT_RISK","Set positive V95_PAPER_EQUITY before opening any paper position"
+    risk_budget=paper_equity*0.02
+    units=risk_budget/(stop-price)
+    if not math.isfinite(units) or units<=0:
+        return state,"WAIT_RISK","Invalid hypothetical position sizing"
     state["paper_position"]={"entry":price,"initial_stop":stop,"current_stop":stop,
-                              "target":target,"partial_proposed":False,\n                              "partial_acknowledged":False,"opened_at":last}
-    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, SELL proxy={power:.1f}%"
+                              "target":target,"paper_units":units,"risk_budget":risk_budget,\n                              "partial_proposed":False,\n                              "partial_acknowledged":False,"opened_at":last}
+    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%"
 
 
 def main():
