@@ -78,12 +78,12 @@ def candles():
             raise RuntimeError("Invalid OHLC")
         rows.append({"t":t,"o":o,"h":h,"l":l,"c":c})
     rows.sort(key=lambda x:x["t"])
-    if len(rows)<960 or len({x["t"] for x in rows})!=len(rows):
+    if len(rows)<720 or len({x["t"] for x in rows})!=len(rows):
         raise RuntimeError("Insufficient or duplicate M1 history")
     if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
         raise RuntimeError("Stale provider data; no signals")
     # Do not fill missing candles. A market closure is a legitimate reason to wait.
-    tail=rows[-960:]
+    tail=rows[-720:]
     if any(b["t"]-a["t"]!=dt.timedelta(minutes=1) for a,b in zip(tail,tail[1:])):
         raise RuntimeError("Gap in required M1 history; no signals")
     return rows
@@ -119,7 +119,7 @@ def evaluate(rows,state):
     m15=aggregate(rows,15)
     h1=aggregate(rows,60)
     h4=aggregate(rows,240)
-    if len(m15)<18 or len(m5)<6 or len(h1)<3 or len(h4)<3:
+    if len(m15)<18 or len(m5)<6 or len(h1)<3 or len(h4)<2:
         return state,"WAIT_DATA","Insufficient completed aligned bars"
     latest=rows[-1]
     last=latest["t"].isoformat()
@@ -152,12 +152,12 @@ def evaluate(rows,state):
         elif (sum(m5[-i]["c"]>m5[-i-1]["c"] for i in range(1,5))>=3
               and m5[-1]["c"]>m5[-2]["c"] and h1[-1]["c"]>h1[-2]["c"]):
             action="EXIT_SELL_NOW"
-        elif pos.get("partial") and pos["current_stop"]>entry:
+        elif pos.get("partial_acknowledged") and pos["current_stop"]>entry:
             action="MOVE_SL"
             pos["current_stop"]=entry
-        elif r>=1 and not pos.get("partial"):
-            action="PARTIAL_EXIT"
-            pos["partial"]=True
+        elif latest["l"]<=entry-risk and not pos.get("partial_acknowledged"):
+            action="PARTIAL_EXIT_PROPOSED"
+            pos["partial_proposed"]=True
         else:
             action="HOLD_SELL"
         if action in ("SL_TOUCHED","TP_TOUCHED","EXIT_SELL_NOW"):
@@ -172,7 +172,7 @@ def evaluate(rows,state):
     h4_bearish=h4[-1]["c"]<h4[-2]["c"]
     m5_bearish=m5[-1]["c"]<m5[-2]["c"] and sum(
         m5[-i]["c"]<m5[-i-1]["c"] for i in range(1,5))>=3
-    location=price>min(x["l"] for x in m15[-9:-1])+0.5*m15atr
+    # Check remaining downside room against older support, not the breakout level.\n    # Never veto a breakout solely for crossing the support it just broke.\n    older_support=min(x["l"] for x in m15[-17:-5])\n    location=(price-older_support)>1.0*m15atr
     if not (breakout and trend and h4_bearish and m5_bearish and location and power>=60):
         return state,"WAIT_SELL",(
             f"SELL proxy={power:.1f}%, M5 bearish={m5_bearish}, "
@@ -183,7 +183,7 @@ def evaluate(rows,state):
         return state,"WAIT_DATA","Invalid structure/ATR stop"
     target=price-2*(stop-price)
     state["paper_position"]={"entry":price,"initial_stop":stop,"current_stop":stop,
-                              "target":target,"partial":False,"opened_at":last}
+                              "target":target,"partial_proposed":False,\n                              "partial_acknowledged":False,"opened_at":last}
     return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, SELL proxy={power:.1f}%"
 
 
@@ -197,7 +197,7 @@ def main():
             save(updated)
             LOG.info("%s %s",action,note)
             if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
-                          "EXIT_SELL_NOW","PARTIAL_EXIT","MOVE_SL"}:
+                          "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
                 message=f"[V9.5 PAPER RESEARCH — NOT A TRADE]\n{action}\n{note}"
                 send(message)
         except Exception as exc:
