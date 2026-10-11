@@ -45,3 +45,5 @@ jobs:
                       print("First row:", row)
                       break
           PY
+      - name: Run V9.5 exploratory SELL challenger (offline only)
+        run: python research/audits/v95_sell_challenger.py --output /tmp/v95_sell_challenger.json
