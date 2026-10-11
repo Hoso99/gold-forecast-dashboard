@@ -7,7 +7,7 @@ import ast
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
-for name in ("candle_dynamics_h1_context_v94.py", "candle_dynamics_h4_context_v94.py", "candle_dynamics_full_chain_v94.py", "candle_dynamics_production_parity_v94.py"):
+for name in ("candle_dynamics_v94.py", "sr_location_research_v94.py", "compare_candle_windows_v94.py", "candle_power_v94.py"):
     path = root / name
     if not path.exists():
         print("NOT_FOUND", name)
