@@ -53,3 +53,5 @@ jobs:
         run: python research/audits/v95_feature_inventory.py
       - name: Compare V9.5 higher-timeframe SELL context (descriptive only)
         run: python research/audits/v95_context_comparison.py
+      - name: Audit H1 H4 feature timestamp integrity (research only)
+        run: python research/audits/v95_time_integrity_audit.py
