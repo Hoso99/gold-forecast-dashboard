@@ -48,9 +48,10 @@ class ShadowTests(unittest.TestCase):
                         if isinstance(n, ast.FunctionDef) and n.name == "evaluate")
         gates = [n.test for n in ast.walk(evaluate)
                  if isinstance(n, ast.If)
-                 and "breakout and trend" in ast.unparse(n.test)]
+                 and "structural_sell and trend" in ast.unparse(n.test)]
         self.assertEqual(len(gates), 1)
         gate = ast.unparse(gates[0])
+        self.assertIn("structural_sell", gate)
         self.assertIn("trend", gate)
         self.assertIn("m5_bearish", gate)
         self.assertNotIn("h4_bearish", gate)

@@ -19,6 +19,7 @@ from v95_biquote import fetch_context
 from v95_research_votes import votes
 from v95_telegram_format import format_alert
 from v95_entry_exit_shadow import entry_diagnostics, exit_diagnostics
+from v95_core_sell_detectors import detect as detect_core_sell
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -198,10 +199,11 @@ def evaluate(rows,state):
         return state,"WAIT_RISK","Set positive V95_PAPER_EQUITY before opening any paper position"
     if state["realized_paper_loss"]>=paper_equity*0.03:
         return state,"DAILY_PAPER_LOCK","3% UTC-day realized paper loss threshold reached"
-    # Research-only candidate. Require completed M5 momentum and H1/H4 trend.
+    # Research-only candidate. Require M5 momentum and H1 trend; H4 advisory.
     # No real position or broker execution is assumed.
-    recent=m15[-1]
-    breakout=recent["c"]<min(x["l"] for x in m15[-5:-1])
+    core_detectors=detect_core_sell(m15,m15atr,power)
+    state["core_sell_detectors"]=core_detectors
+    structural_sell=core_detectors.get("structural_sell",False)
     trend=h1[-1]["c"]<h1[-2]["c"]
     # H4 is advisory context only; it must never veto an otherwise valid SELL.
     h4_bearish=h4[-1]["c"]<h4[-2]["c"]
@@ -211,11 +213,13 @@ def evaluate(rows,state):
     # Never veto a breakout solely for crossing the support it just broke.
     older_support=min(x["l"] for x in m15[-17:-5])
     location=(price-older_support)>1.0*m15atr
-    if not (breakout and trend and m5_bearish and location and power>=60):
+    if not (structural_sell and trend and m5_bearish and location and power>=60):
         return state,"WAIT_SELL",(
             f"SELL proxy={power:.1f}%, M5 bearish={m5_bearish}, "
-            f"M15 breakout={breakout}, H1 bearish={trend}, "
-            f"H4 advisory bearish={h4_bearish}, support buffer={location}")
+            f"enhanced support break={core_detectors.get('enhanced_support_break')}, "
+            f"bearish liquidity sweep={core_detectors.get('bearish_liquidity_sweep')}, "
+            f"H1 bearish={trend}, H4 advisory bearish={h4_bearish}, "
+            f"support buffer={location}")
     stop=max(x["h"] for x in m15[-5:])+1.5*m15atr
     if stop<=price:
         return state,"WAIT_DATA","Invalid structure/ATR stop"
@@ -225,11 +229,16 @@ def evaluate(rows,state):
     units=risk_budget/(stop-price)
     if not math.isfinite(units) or units<=0:
         return state,"WAIT_RISK","Invalid hypothetical position sizing"
+    triggered_detectors=[
+        name for name in ("enhanced_support_break", "bearish_liquidity_sweep")
+        if core_detectors.get(name,False)
+    ]
     state["paper_position"]={"entry":price,"initial_stop":stop,"current_stop":stop,
                               "target":target,"paper_units":units,"risk_budget":risk_budget,
                               "partial_proposed":False,
-                              "partial_acknowledged":False,"opened_at":last}
-    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%, H4 advisory bearish={h4_bearish}"
+                              "partial_acknowledged":False,"opened_at":last,
+                              "entry_detectors":triggered_detectors}
+    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%, detectors={triggered_detectors}, H4 advisory bearish={h4_bearish}"
 
 
 def journal_decision(action,note,state):
@@ -243,6 +252,7 @@ def journal_decision(action,note,state):
          "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
          "diagnostics":state.get("diagnostics",{}),
          "research_votes":state.get("research_votes",{}),
+         "core_sell_detectors":state.get("core_sell_detectors",{}),
          "shadow_entry":state.get("shadow_entry",{}),
          "shadow_exit":state.get("shadow_exit",{}),
          "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"})}
