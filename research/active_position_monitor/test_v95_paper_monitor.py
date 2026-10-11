@@ -40,6 +40,23 @@ class PaperMonitorTests(unittest.TestCase):
         self.assertEqual(action,"WAIT_DATA")
         self.assertIsNone(got["paper_position"])
 
+    def test_h4_minimum_after_twelve_hours(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":102.,
+               "l":99.,"c":101.} for i in range(720)]
+        self.assertEqual(len(mod.aggregate(rows,240)),3)
+
+    def test_unacknowledged_partial_does_not_move_stop(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":100.1,
+               "l":99.8,"c":99.9} for i in range(720)]
+        state={"last_bar":None,"paper_position":{"entry":101.,"initial_stop":103.,
+               "current_stop":103.,"partial_proposed":True,
+               "partial_acknowledged":False,"target":97.,"opened_at":"previous"}}
+        got,action,_=mod.evaluate(rows,state)
+        self.assertEqual(action,"HOLD_SELL")
+        self.assertEqual(got["paper_position"]["current_stop"],103.)
+
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
             with patch.object(mod,"urlopen") as network:
