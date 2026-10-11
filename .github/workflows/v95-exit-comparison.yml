@@ -1,0 +1,40 @@
+name: V9.5 Exit Variant Comparison (Research Only)
+
+on:
+  push:
+    branches:
+      - research/v94-reliability-audit-20261011
+    paths:
+      - research/audits/v95_exit_31_proxy_comparison.py
+      - research/audits/v95_exit_variant_engine.py
+      - research/data/v94_forward_m1.csv
+      - .github/workflows/v95-exit-comparison.yml
+
+permissions:
+  contents: read
+
+jobs:
+  offline-exit-comparison:
+    if: github.ref == 'refs/heads/research/v94-reliability-audit-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run offline 31-variant proxy comparison
+        run: |
+          mkdir -p research-reports
+          python research/audits/v95_exit_31_proxy_comparison.py > research-reports/exit_31_proxy.json
+          python -m json.tool research-reports/exit_31_proxy.json
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-exit-31-proxy-comparison
+          path: research-reports/
+          if-no-files-found: warn
+          retention-days: 14
