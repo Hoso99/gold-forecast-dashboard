@@ -791,7 +791,12 @@ def check_once() -> str:
     api_key = _secret("TWELVE_DATA_API_KEY")
     if not api_key:
         raise RuntimeError("TWELVE_DATA_API_KEY is missing.")
-    gold_for_outcomes = _fresh_gold(api_key)
+    try:
+        gold_for_outcomes = _fresh_gold(api_key)
+    except RuntimeError as exc:
+        if "outside the accepted market session" in str(exc):
+            return f"SKIPPED_MARKET_CLOSED: {exc}"
+        raise
     update_open_trades(gold_for_outcomes)
     previous = load_state()
     setup = calculate_current_setup(api_key)
@@ -839,7 +844,7 @@ def check_once() -> str:
 
     threshold = float(threshold)
     current_price = float(setup["entry_reference"])
-    reached = True
+    reached = threshold_reached(side, current_price, threshold)
 
     # Deduplicate by completed M15 model candle + side + rounded threshold.
     alert_key = f"{setup['model_time']}|{side}"
@@ -847,7 +852,14 @@ def check_once() -> str:
         state["last_alert_key"] = previous["last_alert_key"]
     if previous.get("last_alert_price") is not None:
         state["last_alert_price"] = previous["last_alert_price"]
-    if reached and previous.get("last_alert_key") != alert_key:
+    if not reached:
+        save_state(state)
+        return f"WATCHING {side}: threshold not reached"
+    if previous.get("last_alert_key") == alert_key:
+        save_state(state)
+        return f"ALREADY_ALERTED {side}: {alert_key}"
+
+    if reached:
         stop_loss = float(setup.get("stop_loss", np.nan))
         take_profit = float(setup.get("take_profit", np.nan))
         reward_risk = float(setup.get("reward_risk", np.nan))
@@ -934,19 +946,12 @@ def check_once() -> str:
                     "sell_candles_2": setup["sell_candles_2"],
                     "pressure_acceleration": round(float(setup["pressure_acceleration"]), 4),
                     "basis": setup["basis"],
-                    "status": "OPEN",
+                    "status": "SIGNAL_ALERTED",
                 })
                 save_journal(journal)
     
     save_state(state)
     return f"{delivery.status}: {delivery.detail}"
-
-    save_state(state)
-    return (
-        f"WATCHING {side}: XAU/USD {current_price:,.2f}; "
-        f"threshold {threshold:,.2f}; reached={reached}; basis={setup['basis']}"
-    )
-
 
 if __name__ == "__main__":
     print(check_once())
