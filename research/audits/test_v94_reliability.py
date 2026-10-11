@@ -32,7 +32,6 @@ class V94WatcherStaticRegression(unittest.TestCase):
         source = ast.get_source_segment(self.source, self.functions["check_once"])
         self.assertNotIn("reached = True", source)
         self.assertIn("threshold_reached(", source)
-        self.assertIn("threshold_reached(", source)  # Immediate-quote mode only
 
     def test_alert_active_is_initialized(self):
         """Regression: deduplicated alert must not reference unbound active."""
