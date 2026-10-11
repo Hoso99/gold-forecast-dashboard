@@ -61,7 +61,7 @@ def save(state):
 def candles():
     if not KEY:
         raise RuntimeError("Missing TWELVE_DATA_API_KEY")
-    query=urlencode({"symbol":"XAU/USD","interval":"1min","outputsize":500,
+    query=urlencode({"symbol":"XAU/USD","interval":"1min","outputsize":1000,
                      "timezone":"UTC","apikey":KEY,"format":"JSON"})
     with urlopen("https://api.twelvedata.com/time_series?"+query,timeout=30) as r:
         result=json.load(r)
@@ -78,30 +78,31 @@ def candles():
             raise RuntimeError("Invalid OHLC")
         rows.append({"t":t,"o":o,"h":h,"l":l,"c":c})
     rows.sort(key=lambda x:x["t"])
-    if len(rows)<240 or len({x["t"] for x in rows})!=len(rows):
+    if len(rows)<960 or len({x["t"] for x in rows})!=len(rows):
         raise RuntimeError("Insufficient or duplicate M1 history")
     if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
         raise RuntimeError("Stale provider data; no signals")
     # Do not fill missing candles. A market closure is a legitimate reason to wait.
-    tail=rows[-240:]
+    tail=rows[-960:]
     if any(b["t"]-a["t"]!=dt.timedelta(minutes=1) for a,b in zip(tail,tail[1:])):
         raise RuntimeError("Gap in required M1 history; no signals")
     return rows
 
 
 def aggregate(rows,minutes):
+    """Aggregate only fully completed, correctly aligned, contiguous M1 bars."""
     out=[]
-    chunk=[]
+    groups={}
     for x in rows:
-        if x["t"].minute%minutes==0 and (minutes!=60 or x["t"].minute==0):
-            chunk=[]
-        chunk.append(x)
-        if len(chunk)==minutes:
-            start=chunk[0]["t"]
-            if (start.hour*60+start.minute)%minutes==0:
-                out.append({"t":start,"o":chunk[0]["o"],"h":max(y["h"] for y in chunk),
-                            "l":min(y["l"] for y in chunk),"c":chunk[-1]["c"]})
-            chunk=[]
+        start=x["t"].replace(minute=0,second=0,microsecond=0)
+        start+=dt.timedelta(minutes=(x["t"].minute//minutes)*minutes)
+        groups.setdefault(start,[]).append(x)
+    for start,chunk in sorted(groups.items()):
+        expected=[start+dt.timedelta(minutes=i) for i in range(minutes)]
+        if len(chunk)!=minutes or [x["t"] for x in chunk]!=expected:
+            continue
+        out.append({"t":start,"o":chunk[0]["o"],"h":max(y["h"] for y in chunk),
+                    "l":min(y["l"] for y in chunk),"c":chunk[-1]["c"]})
     return out
 
 
@@ -116,7 +117,8 @@ def evaluate(rows,state):
     m5=aggregate(rows,5)
     m15=aggregate(rows,15)
     h1=aggregate(rows,60)
-    if len(m15)<18 or len(m5)<6 or len(h1)<3:
+    h4=aggregate(rows,240)
+    if len(m15)<18 or len(m5)<6 or len(h1)<3 or len(h4)<3:
         return state,"WAIT_DATA","Insufficient completed aligned bars"
     latest=rows[-1]
     last=latest["t"].isoformat()
@@ -161,13 +163,20 @@ def evaluate(rows,state):
             state["paper_position"]=None
         note=f"paper entry={entry:.2f}, price={price:.2f}, R={r:.2f}, SL={pos['current_stop']:.2f}"
         return state,action,note
-    # Research-only candidate: trend-aligned M15 downside breakout, pressure,
-    # H1 bearish confirmation. No real position or broker execution is assumed.
+    # Research-only candidate. Require completed M5 momentum and H1/H4 trend.
+    # No real position or broker execution is assumed.
     recent=m15[-1]
     breakout=recent["c"]<min(x["l"] for x in m15[-5:-1])
     trend=h1[-1]["c"]<h1[-2]["c"]
-    if not (breakout and trend and power>=60):
-        return state,"WAIT_SELL",f"SELL proxy={power:.1f}%, breakout={breakout}, H1 bearish={trend}"
+    h4_bearish=h4[-1]["c"]<h4[-2]["c"]
+    m5_bearish=m5[-1]["c"]<m5[-2]["c"] and sum(
+        m5[-i]["c"]<m5[-i-1]["c"] for i in range(1,5))>=3
+    location=price>min(x["l"] for x in m15[-9:-1])+0.5*m15atr
+    if not (breakout and trend and h4_bearish and m5_bearish and location and power>=60):
+        return state,"WAIT_SELL",(
+            f"SELL proxy={power:.1f}%, M5 bearish={m5_bearish}, "
+            f"M15 breakout={breakout}, H1 bearish={trend}, "
+            f"H4 bearish={h4_bearish}, support buffer={location}")
     stop=max(x["h"] for x in m15[-5:])+1.5*m15atr
     if stop<=price:
         return state,"WAIT_DATA","Invalid structure/ATR stop"
