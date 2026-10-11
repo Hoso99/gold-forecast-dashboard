@@ -3,10 +3,12 @@ import datetime as dt
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
 P=Path(__file__).with_name("v95_paper_monitor.py")
+sys.path.insert(0,str(P.parent))
 spec=importlib.util.spec_from_file_location("v95_paper_monitor",P)
 mod=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -56,6 +58,14 @@ class PaperMonitorTests(unittest.TestCase):
         got,action,_=mod.evaluate(rows,state)
         self.assertEqual(action,"HOLD_SELL")
         self.assertEqual(got["paper_position"]["current_stop"],103.)
+
+    def test_research_diagnostics_are_causal(self):
+        from v95_indicators import ema,rsi,pressure,pivot
+        self.assertIsNone(ema([1,2],3))
+        self.assertEqual(ema([1,2,3],3),2)
+        self.assertEqual(rsi(list(range(20))),100)
+        self.assertEqual(pressure([{"o":10,"c":9}]*10),100)
+        self.assertEqual(pivot({"h":12,"l":6,"c":9}),9)
 
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
