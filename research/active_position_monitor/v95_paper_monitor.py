@@ -94,8 +94,9 @@ def aggregate(rows,minutes):
     out=[]
     groups={}
     for x in rows:
-        start=x["t"].replace(minute=0,second=0,microsecond=0)
-        start+=dt.timedelta(minutes=(x["t"].minute//minutes)*minutes)
+        midnight=x["t"].replace(hour=0,minute=0,second=0,microsecond=0)
+        minute_of_day=x["t"].hour*60+x["t"].minute
+        start=midnight+dt.timedelta(minutes=(minute_of_day//minutes)*minutes)
         groups.setdefault(start,[]).append(x)
     for start,chunk in sorted(groups.items()):
         expected=[start+dt.timedelta(minutes=i) for i in range(minutes)]
