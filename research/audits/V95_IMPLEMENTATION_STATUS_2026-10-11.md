@@ -12,8 +12,8 @@
 | 8/10/12/15/20 M15 windows | Research pending | Require fair baseline, causal replay and WAIT journal |
 | Four independent low-correlation modules | Pending | No validated independence or overlap evidence |
 | Elliott Wave, volume/liquidity proxies | Pending | Must be causal and explicitly labeled proxy |
-| Biquote event/pressure integration | Pending | Verify actual endpoint schema, access and timestamp freshness before integration; never substitute invented data |
-| High-impact calendar incl. oil inventories, Cyprus/UTC | Pending | No reliable real-time integration in monitor |
+| Biquote event/quote context | Implemented as optional research journaling, live unverified | Public bid/ask and high-impact US calendar incl. oil; no Biquote sell-pressure API assumed; no trade gate |
+| High-impact calendar incl. oil inventories, Cyprus/UTC | Implemented optional context, live unverified | Explicit exact-time events only; no news-based trading gate |
 | Adaptive ATR for event volatility | Pending | Current monitor uses structural + fixed 1.5 ATR |
 | Minimum 2R target | Implemented paper | Entry uses structural SL and 2R |
 | 2% risk / 3% UTC day loss lock | Prototype, audit pending | Requires V95_PAPER_EQUITY; paper-only ledger lacks full fill/cost accounting |
