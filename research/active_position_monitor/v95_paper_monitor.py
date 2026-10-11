@@ -10,6 +10,7 @@ import logging
 import math
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -243,9 +244,37 @@ def journal_decision(action,note,state):
         out.write(json.dumps(row,sort_keys=True)+"\n")
     os.chmod(JOURNAL,0o600)
 
+def market_session_open(now=None):
+    """Conservative indicative XAU/USD weekly session; freshness checks still required.
+
+    New York Friday 17:00 through Sunday 17:00 is closed. Provider holidays
+    and maintenance are not inferred; candles() rejects stale and gapped bars.
+    """
+    now = now or dt.datetime.now(UTC)
+    ny = now.astimezone(ZoneInfo("America/New_York"))
+    weekday = ny.weekday()
+    if weekday == 5:
+        return False
+    if weekday == 4 and ny.hour >= 17:
+        return False
+    if weekday == 6 and ny.hour < 17:
+        return False
+    return True
+
+
 def cycle():
     state=load()
+    if not market_session_open():
+        action="WAIT_MARKET_CLOSED"
+        note="Indicative XAU/USD weekend closure; no paper entries or exits evaluated"
+        if state.get("last_event") != action:
+            journal_decision(action,note,state)
+        state["last_event"]=action
+        save(state)
+        LOG.info("%s %s",action,note)
+        return action
     updated,action,note=evaluate(candles(),state)
+    updated["last_event"]=action
     # Context is logged independently. No assumed Biquote pressure or fabricated data.
     # An unavailable optional context feed is explicitly recorded as UNKNOWN.
     if os.getenv("V95_BIQUOTE_ENABLED","0")=="1":
@@ -258,7 +287,7 @@ def cycle():
     LOG.info("%s %s",action,note)
     if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
                   "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
-        send("[V9.5 PAPER RESEARCH — NOT A TRADE]\n"+action+"\n"+note)
+        send(format_alert(action,note,updated))
     return action
 
 def main():
