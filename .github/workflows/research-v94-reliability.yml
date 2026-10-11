@@ -55,3 +55,6 @@ jobs:
         run: python research/audits/v95_context_comparison.py
       - name: Audit H1 H4 feature timestamp integrity (research only)
         run: python research/audits/v95_time_integrity_audit.py
+
+      - name: Audit M1-derived M5 and M15 candle completeness (research only)
+        run: python research/audits/v95_m5_timing_audit.py
