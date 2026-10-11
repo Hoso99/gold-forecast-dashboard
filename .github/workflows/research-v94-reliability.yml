@@ -21,7 +21,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install offline replay dependencies
+        run: python -m pip install pandas numpy
       - name: Check Python syntax
-        run: python -m py_compile entry_watch_v94.py research/audits/test_v94_reliability.py
+        run: python -m py_compile entry_watch_v94.py research/audits/test_v94_reliability.py research/audits/replay_structure_v94.py research/audits/test_v94_replay.py
       - name: Run static regression tests (no API keys or orders)
         run: python -m unittest discover -s research/audits -p 'test_v94_*.py' -v
