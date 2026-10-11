@@ -24,4 +24,4 @@ jobs:
       - name: Check Python syntax
         run: python -m py_compile entry_watch_v94.py research/audits/test_v94_reliability.py
       - name: Run static regression tests (no API keys or orders)
-        run: python -m unittest discover -s research/audits -p 'test_v94_reliability.py' -v
+        run: python -m unittest discover -s research/audits -p 'test_v94_*.py' -v
