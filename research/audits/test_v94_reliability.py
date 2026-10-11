@@ -53,6 +53,10 @@ class V94WatcherStaticRegression(unittest.TestCase):
         self.assertNotIn('"status": "OPEN"', source)
         self.assertIn('"record_type": "HYPOTHETICAL_SIGNAL"', source)
 
+    def test_structure_plan_must_be_active(self):
+        source = ast.get_source_segment(self.source, self.functions["calculate_current_setup"])
+        self.assertIn('plan.get("status") != "ACTIVE"', source)
+
     def test_closed_market_has_clean_skip(self):
         source = ast.get_source_segment(self.source, self.functions["check_once"])
         self.assertIn("SKIPPED_MARKET_CLOSED", source)
