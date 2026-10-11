@@ -58,3 +58,6 @@ jobs:
 
       - name: Audit M1-derived M5 and M15 candle completeness (research only)
         run: python research/audits/v95_m5_timing_audit.py
+
+      - name: Compare M15 SELL signals with completed-candle M5 confirmation (research only)
+        run: python research/audits/v95_m5_confirmation_challenger.py
