@@ -28,3 +28,11 @@
 - Telegram messages are labeled PAPER RESEARCH. A Telegram send failure does not imply an order was placed.
 - Avoid enabling during unverified weekend/holiday quotes; assess provider market hours.
 - For a full production-quality monitor: validate timestamps, incorporate event/volatility feeds, reconcile a real read-only position ledger, test rate limits and run independent forward validation.
+
+## V9.5 shadow journal and initial smoke test
+- The research-only monitor writes V9.5 SELL and WAIT decisions to `~/.local/state/v95-research/decisions.jsonl`; it never reads or writes V9.4 state or signals.
+- Set `V95_PAPER_EQUITY` to an explicitly chosen *hypothetical* positive account balance to enable 2% paper sizing; do not infer or reuse real account equity. 3% UTC-day realized paper loss lock is a research approximation, not a broker-level safeguard.
+- From the existing Ubuntu shell, update **only** `/home/ubuntu/v95-research` using `cd /home/ubuntu/v95-research && git fetch origin research/v94-reliability-audit-20261011 && git checkout --detach FETCH_HEAD` after CI succeeds.
+- Run the offline test suite, then `V95_TELEGRAM_ENABLED=0 .venv/bin/python research/active_position_monitor/v95_paper_monitor.py --once` to check one observation. The environment must already contain the Twelve Data key; do not display it.
+- The `--once` check does not install a daemon. Review data timestamps, WAIT reasons, and journal before enabling notifications. An observed SELL is a hypothetical paper signal, not a broker trade.
+- No automatic V9.4 comparison is claimed until a separate read-only historical V9.4 journal is obtained with matching timestamps and verified source parity.
