@@ -40,7 +40,7 @@ def run() -> dict:
     if m.datetime.duplicated().any():
         raise ValueError("Duplicate M1 timestamps; review source instead of silently deduplicating")
     m = m.set_index("datetime").sort_index()
-    if not (m.index.minute.mod(1) == 0).all():
+    if not ((m.index.second == 0) & (m.index.microsecond == 0)).all():
         raise ValueError("Non-minute timestamps")
     b15, b5 = completed_bars(m,15), completed_bars(m,5)
     spec = importlib.util.spec_from_file_location("v94_candle_power_research", ROOT/"candle_power_v94.py")
