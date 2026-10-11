@@ -134,7 +134,11 @@ def evaluate(rows,state):
     m15atr=atr(m15)
     if m15atr is None or m15atr<=0:
         return state,"WAIT_DATA","Invalid M15 ATR"
-    today=latest["t"].date().isoformat()\n    if state.get("loss_day_utc")!=today:\n        state["loss_day_utc"]=today\n        state["realized_paper_loss"]=0.0\n    pos=state.get("paper_position")
+    today=latest["t"].date().isoformat()
+    if state.get("loss_day_utc")!=today:
+        state["loss_day_utc"]=today
+        state["realized_paper_loss"]=0.0
+    pos=state.get("paper_position")
     if pos:
         entry,initial_stop=pos["entry"],pos["initial_stop"]
         risk=initial_stop-entry
@@ -189,7 +193,10 @@ def evaluate(rows,state):
     h4_bearish=h4[-1]["c"]<h4[-2]["c"]
     m5_bearish=m5[-1]["c"]<m5[-2]["c"] and sum(
         m5[-i]["c"]<m5[-i-1]["c"] for i in range(1,5))>=3
-    # Check remaining downside room against older support, not the breakout level.\n    # Never veto a breakout solely for crossing the support it just broke.\n    older_support=min(x["l"] for x in m15[-17:-5])\n    location=(price-older_support)>1.0*m15atr
+    # Check remaining downside room against older support, not the breakout level.
+    # Never veto a breakout solely for crossing the support it just broke.
+    older_support=min(x["l"] for x in m15[-17:-5])
+    location=(price-older_support)>1.0*m15atr
     if not (breakout and trend and h4_bearish and m5_bearish and location and power>=60):
         return state,"WAIT_SELL",(
             f"SELL proxy={power:.1f}%, M5 bearish={m5_bearish}, "
@@ -205,7 +212,9 @@ def evaluate(rows,state):
     if not math.isfinite(units) or units<=0:
         return state,"WAIT_RISK","Invalid hypothetical position sizing"
     state["paper_position"]={"entry":price,"initial_stop":stop,"current_stop":stop,
-                              "target":target,"paper_units":units,"risk_budget":risk_budget,\n                              "partial_proposed":False,\n                              "partial_acknowledged":False,"opened_at":last}
+                              "target":target,"paper_units":units,"risk_budget":risk_budget,
+                              "partial_proposed":False,
+                              "partial_acknowledged":False,"opened_at":last}
     return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%"
 
 
