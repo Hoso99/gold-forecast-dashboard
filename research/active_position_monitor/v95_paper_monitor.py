@@ -134,7 +134,7 @@ def evaluate(rows,state):
     m15atr=atr(m15)
     if m15atr is None or m15atr<=0:
         return state,"WAIT_DATA","Invalid M15 ATR"
-    pos=state.get("paper_position")
+    today=latest["t"].date().isoformat()\n    if state.get("loss_day_utc")!=today:\n        state["loss_day_utc"]=today\n        state["realized_paper_loss"]=0.0\n    pos=state.get("paper_position")
     if pos:
         entry,initial_stop=pos["entry"],pos["initial_stop"]
         risk=initial_stop-entry
@@ -161,9 +161,25 @@ def evaluate(rows,state):
         else:
             action="HOLD_SELL"
         if action in ("SL_TOUCHED","TP_TOUCHED","EXIT_SELL_NOW"):
+            # Conservative paper-only PnL; adverse stop gaps use worse M1 open.
+            if action=="SL_TOUCHED":
+                hypothetical_fill=max(pos["current_stop"],latest["o"])
+            elif action=="TP_TOUCHED":
+                hypothetical_fill=entry-2*risk
+            else:
+                hypothetical_fill=price
+            paper_pnl=(entry-hypothetical_fill)*pos.get("paper_units",0.0)
+            if paper_pnl<0:
+                state["realized_paper_loss"]+=-paper_pnl
             state["paper_position"]=None
         note=f"paper entry={entry:.2f}, price={price:.2f}, R={r:.2f}, SL={pos['current_stop']:.2f}"
         return state,action,note
+    # Daily paper realized-loss lock (3% of configured starting paper equity).
+    paper_equity=float(os.getenv("V95_PAPER_EQUITY","0"))
+    if not math.isfinite(paper_equity) or paper_equity<=0:
+        return state,"WAIT_RISK","Set positive V95_PAPER_EQUITY before opening any paper position"
+    if state["realized_paper_loss"]>=paper_equity*0.03:
+        return state,"DAILY_PAPER_LOCK","3% UTC-day realized paper loss threshold reached"
     # Research-only candidate. Require completed M5 momentum and H1/H4 trend.
     # No real position or broker execution is assumed.
     recent=m15[-1]
@@ -183,10 +199,7 @@ def evaluate(rows,state):
         return state,"WAIT_DATA","Invalid structure/ATR stop"
     target=price-2*(stop-price)
     # Position sizing requires a verified paper equity amount. Never invent 2% risk.
-    paper_equity=float(os.getenv("V95_PAPER_EQUITY","0"))
-    if not math.isfinite(paper_equity) or paper_equity<=0:
-        return state,"WAIT_RISK","Set positive V95_PAPER_EQUITY before opening any paper position"
-    risk_budget=paper_equity*0.02
+    risk_budget=min(paper_equity*0.02,max(0.0,paper_equity*0.03-state["realized_paper_loss"]))
     units=risk_budget/(stop-price)
     if not math.isfinite(units) or units<=0:
         return state,"WAIT_RISK","Invalid hypothetical position sizing"
