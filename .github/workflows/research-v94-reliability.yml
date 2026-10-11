@@ -47,3 +47,5 @@ jobs:
           PY
       - name: Run V9.5 exploratory SELL challenger (offline only)
         run: python research/audits/v95_sell_challenger.py --output /tmp/v95_sell_challenger.json
+      - name: Compare V9.5 bearish continuation and rejection features
+        run: python research/audits/v95_sell_features.py
