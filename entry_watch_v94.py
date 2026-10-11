@@ -764,6 +764,7 @@ def calculate_current_setup(api_key: str) -> dict:
     take_profit = entry - (MIN_RR * stop_distance)
     
     result["entry_reference"] = entry
+    # Immediate signal at the sampled quote; this is NOT a pending-entry trigger.
     result["threshold"] = entry
     result["stop_loss"] = stop_loss
     result["take_profit"] = take_profit
@@ -844,6 +845,8 @@ def check_once() -> str:
 
     threshold = float(threshold)
     current_price = float(setup["entry_reference"])
+    # Immediate-quote alert mode: threshold is the quote sampled for this setup.
+    # A genuine future pending-entry watcher needs persisted levels and new quotes.
     reached = threshold_reached(side, current_price, threshold)
 
     # Deduplicate by completed M15 model candle + side + rounded threshold.
