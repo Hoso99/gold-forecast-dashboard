@@ -13,6 +13,7 @@ from pathlib import Path
 import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from v95_indicators import diagnostics
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -129,6 +130,7 @@ def evaluate(rows,state):
         return state,"UNCHANGED","No new completed M1 candle"
     state["last_bar"]=last
     price=latest["c"]
+    state["diagnostics"]=diagnostics(rows,m5,m15,h1,h4)
     sell_pressure=sum(max(x["o"]-x["c"],0) for x in rows[-10:])
     buy_pressure=sum(max(x["c"]-x["o"],0) for x in rows[-10:])
     total=buy_pressure+sell_pressure
@@ -228,7 +230,8 @@ def journal_decision(action,note,state):
     row={"version":"V9.5_RESEARCH","observed_at_utc":dt.datetime.now(UTC).isoformat(),
          "m1_bar_start_utc":state.get("last_bar"),"decision":action,
          "reason":note,"source":"TWELVE_DATA_XAUUSD_M1_PROXY",
-         "paper_position_open":bool(state.get("paper_position")),"broker_execution":False}
+         "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
+         "diagnostics":state.get("diagnostics",{})}
     with JOURNAL.open("a",encoding="utf-8") as out:
         out.write(json.dumps(row,sort_keys=True)+"\n")
     os.chmod(JOURNAL,0o600)
