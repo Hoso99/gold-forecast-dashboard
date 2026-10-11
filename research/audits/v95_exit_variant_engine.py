@@ -17,7 +17,7 @@ def simulate_sell(bars, entry, initial_stop, atr_m5, mode="baseline",
     atr_m5_closed, m5_close_completed. An ATR update on a bar is
     only allowed to modify the stop for the NEXT bar.
     """
-    if not (initial_stop>entry>0 and horizon>0 and cost_points>=0):
+    if not (math.isfinite(entry) and math.isfinite(initial_stop) and math.isfinite(cost_points) and initial_stop>entry>0 and horizon>0 and cost_points>=0):
         raise ValueError("Invalid SELL parameters")
     if mode not in {"baseline","fixed","partial_fixed","partial_chandelier","chandelier"}:
         raise ValueError("Unsupported variant")
@@ -53,6 +53,7 @@ def simulate_sell(bars, entry, initial_stop, atr_m5, mode="baseline",
                 outcome="TARGET"
                 break
         else:
+            was_partial=partial
             first_target=entry-risk
             if not partial and l<=first_target:
                 if mode in {"partial_fixed","partial_chandelier"}:
@@ -63,7 +64,7 @@ def simulate_sell(bars, entry, initial_stop, atr_m5, mode="baseline",
                 new_stop=min(stop,entry)
             else:
                 new_stop=stop
-            if mode=="partial_fixed" and partial and l<=entry-2*risk:
+            if mode=="partial_fixed" and was_partial and l<=entry-2*risk:
                 realized+=qty*2*risk
                 qty=0.0
                 outcome="TARGET"
