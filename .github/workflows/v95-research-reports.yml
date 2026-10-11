@@ -1,0 +1,53 @@
+name: V9.5 Research Reports (Offline)
+
+on:
+  push:
+    branches:
+      - research/v94-reliability-audit-20261011
+    paths:
+      - research/audits/**
+      - research/data/**
+      - .github/workflows/v95-research-reports.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v95-offline-reports-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-and-tests:
+    if: github.ref == 'refs/heads/research/v94-reliability-audit-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout research commit only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline research dependencies
+        run: python -m pip install numpy pandas
+      - name: Run M1 data integrity audit
+        run: |
+          mkdir -p research-reports
+          python research/audits/v95_m1_data_audit.py > research-reports/m1_integrity.json
+          python -m json.tool research-reports/m1_integrity.json
+      - name: Run V9.5 research regression tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -o pipefail
+          python -m unittest discover -s research/audits -p 'test_*.py' -v 2>&1 | tee research-reports/tests.txt
+      - name: Upload sanitized offline research reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-offline-research-reports
+          path: research-reports/
+          if-no-files-found: warn
+          retention-days: 14
