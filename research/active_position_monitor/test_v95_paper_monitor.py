@@ -94,6 +94,23 @@ class PaperMonitorTests(unittest.TestCase):
         self.assertFalse(got["independence_verified"])
         self.assertEqual(got["agreement"],0)
 
+    def test_detailed_telegram_entry_and_exit_messages(self):
+        from v95_telegram_format import format_alert
+        pos={"entry":4200.,"initial_stop":4210.,"current_stop":4210.,
+             "target":4180.,"risk_budget":200.}
+        state={"paper_position":pos,"diagnostics":{"m1_sell_pressure_10":71.},
+               "research_votes":{"agreement":3},
+               "biquote_context":{"risk":"BUILDING"}}
+        entry=format_alert("PAPER_SELL_ENTRY","research",state)
+        self.assertIn("Entry: 4200.00 | SL: 4210.00 | TP: 4180.00",entry)
+        self.assertIn("Target R:R: 1:2.00",entry)
+        self.assertIn("NO LIVE TRADE",entry)
+        state["last_closed_position"]=pos
+        state["paper_position"]=None
+        exit_message=format_alert("TP_TOUCHED","paper exit",state)
+        self.assertIn("TAKE PROFIT TOUCHED",exit_message)
+        self.assertIn("4180.00",exit_message)
+
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
             with patch.object(mod,"urlopen") as network:
