@@ -7,6 +7,7 @@ on:
     paths:
       - research/audits/v95_dynamic_exit_replay.py
       - .github/workflows/v95-dynamic-exit-replay.yml
+      - research/audits/v95_exit_promotion_gate.py
 
 permissions:
   contents: read
@@ -30,6 +31,8 @@ jobs:
           mkdir -p research-reports
           python research/audits/v95_dynamic_exit_replay.py > research-reports/v95_dynamic_exit_replay.json
           python -m json.tool research-reports/v95_dynamic_exit_replay.json
+      - name: Evaluate research-only promotion gate
+        run: python research/audits/v95_exit_promotion_gate.py > research-reports/v95_exit_promotion_gate.json
       - name: Upload research replay report
         if: always()
         uses: actions/upload-artifact@v4
