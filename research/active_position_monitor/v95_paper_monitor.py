@@ -203,6 +203,7 @@ def evaluate(rows,state):
     recent=m15[-1]
     breakout=recent["c"]<min(x["l"] for x in m15[-5:-1])
     trend=h1[-1]["c"]<h1[-2]["c"]
+    # H4 is advisory context only; it must never veto an otherwise valid SELL.
     h4_bearish=h4[-1]["c"]<h4[-2]["c"]
     m5_bearish=m5[-1]["c"]<m5[-2]["c"] and sum(
         m5[-i]["c"]<m5[-i-1]["c"] for i in range(1,5))>=3
@@ -210,11 +211,11 @@ def evaluate(rows,state):
     # Never veto a breakout solely for crossing the support it just broke.
     older_support=min(x["l"] for x in m15[-17:-5])
     location=(price-older_support)>1.0*m15atr
-    if not (breakout and trend and h4_bearish and m5_bearish and location and power>=60):
+    if not (breakout and trend and m5_bearish and location and power>=60):
         return state,"WAIT_SELL",(
             f"SELL proxy={power:.1f}%, M5 bearish={m5_bearish}, "
             f"M15 breakout={breakout}, H1 bearish={trend}, "
-            f"H4 bearish={h4_bearish}, support buffer={location}")
+            f"H4 advisory bearish={h4_bearish}, support buffer={location}")
     stop=max(x["h"] for x in m15[-5:])+1.5*m15atr
     if stop<=price:
         return state,"WAIT_DATA","Invalid structure/ATR stop"
@@ -228,7 +229,7 @@ def evaluate(rows,state):
                               "target":target,"paper_units":units,"risk_budget":risk_budget,
                               "partial_proposed":False,
                               "partial_acknowledged":False,"opened_at":last}
-    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%"
+    return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%, H4 advisory bearish={h4_bearish}"
 
 
 def journal_decision(action,note,state):
