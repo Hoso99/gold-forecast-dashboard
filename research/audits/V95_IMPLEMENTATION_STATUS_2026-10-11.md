@@ -10,7 +10,7 @@
 | EMA, RSI, pivots, momentum | Diagnostics implemented | v95_indicators.py; not promoted as trade gates |
 | H1/H4 trend and M15 breakout/location | Exploratory gates | Unvalidated historical thresholds |
 | 8/10/12/15/20 M15 windows | Research pending | Require fair baseline, causal replay and WAIT journal |
-| Four independent low-correlation modules | Pending | No validated independence or overlap evidence |
+| Four research voting modules | Implemented as diagnostics, NOT independent | Trend, structure, momentum, candle-flow votes logged; low correlation/edge still unverified |
 | Elliott Wave, volume/liquidity proxies | Pending | Must be causal and explicitly labeled proxy |
 | Biquote event/quote context | Implemented as optional research journaling, live unverified | Public bid/ask and high-impact US calendar incl. oil; no Biquote sell-pressure API assumed; no trade gate |
 | High-impact calendar incl. oil inventories, Cyprus/UTC | Implemented optional context, live unverified | Explicit exact-time events only; no news-based trading gate |
