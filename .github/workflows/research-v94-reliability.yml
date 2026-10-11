@@ -49,3 +49,5 @@ jobs:
         run: python research/audits/v95_sell_challenger.py --output /tmp/v95_sell_challenger.json
       - name: Compare V9.5 bearish continuation and rejection features
         run: python research/audits/v95_sell_features.py
+      - name: Inventory point-in-time SELL and higher-timeframe features
+        run: python research/audits/v95_feature_inventory.py
