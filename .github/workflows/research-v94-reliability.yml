@@ -1,0 +1,27 @@
+name: Research V9.4 Reliability Tests
+
+on:
+  push:
+    branches:
+      - research/v94-reliability-audit-20261011
+    paths:
+      - entry_watch_v94.py
+      - research/audits/**
+      - .github/workflows/research-v94-reliability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Python syntax
+        run: python -m py_compile entry_watch_v94.py research/audits/test_v94_reliability.py
+      - name: Run static regression tests (no API keys or orders)
+        run: python -m unittest discover -s research/audits -p 'test_v94_reliability.py' -v
