@@ -3,6 +3,7 @@
 REST M1 polling. Completed-candle signals only, conservative WAIT on stale/gaps.
 Hypothetical fills use completed candle close; never represent executable quotes.
 """
+import argparse
 import datetime as dt
 import json
 import logging
@@ -20,6 +21,7 @@ POLL=max(30,int(os.getenv("V95_POLL_SECONDS","60")))
 ALERTS=os.getenv("V95_TELEGRAM_ENABLED","0")=="1"
 KEY=os.getenv("TWELVE_DATA_API_KEY","").strip()
 LOG=logging.getLogger("v95-paper")
+JOURNAL=Path(os.getenv("V95_JOURNAL_FILE",str(STATE.with_name("decisions.jsonl"))))
 
 
 def send(message):
@@ -218,23 +220,47 @@ def evaluate(rows,state):
     return state,"PAPER_SELL_ENTRY",f"entry={price:.2f}, SL={stop:.2f}, TP={target:.2f}, paper units={units:.4f}, max planned paper risk={risk_budget:.2f}, SELL proxy={power:.1f}%"
 
 
+def journal_decision(action,note,state):
+    """Append V9.5 decisions to its own research journal, never V9.4."""
+    if action=="UNCHANGED":
+        return
+    JOURNAL.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    row={"version":"V9.5_RESEARCH","observed_at_utc":dt.datetime.now(UTC).isoformat(),
+         "m1_bar_start_utc":state.get("last_bar"),"decision":action,
+         "reason":note,"source":"TWELVE_DATA_XAUUSD_M1_PROXY",
+         "paper_position_open":bool(state.get("paper_position")),"broker_execution":False}
+    with JOURNAL.open("a",encoding="utf-8") as out:
+        out.write(json.dumps(row,sort_keys=True)+"\n")
+    os.chmod(JOURNAL,0o600)
+
+def cycle():
+    state=load()
+    updated,action,note=evaluate(candles(),state)
+    journal_decision(action,note,updated)
+    save(updated)
+    LOG.info("%s %s",action,note)
+    if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
+                  "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
+        send("[V9.5 PAPER RESEARCH — NOT A TRADE]\n"+action+"\n"+note)
+    return action
+
 def main():
     logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
     LOG.info("V9.5 PAPER MONITOR ONLY; NO BROKER EXECUTION")
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--once",action="store_true")
+    args=parser.parse_args()
     while True:
         try:
-            state=load()
-            updated,action,note=evaluate(candles(),state)
-            save(updated)
-            LOG.info("%s %s",action,note)
-            if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
-                          "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
-                message=f"[V9.5 PAPER RESEARCH — NOT A TRADE]\n{action}\n{note}"
-                send(message)
+            cycle()
         except Exception as exc:
-            LOG.warning("WAIT_DATA: %s",type(exc).__name__+": "+str(exc).replace(KEY,"[REDACTED]"))
+            safe=str(exc).replace(KEY,"[REDACTED]") if KEY else str(exc)
+            LOG.warning("WAIT_DATA: %s",type(exc).__name__+": "+safe)
+            if args.once:
+                raise SystemExit(1)
+        if args.once:
+            break
         time.sleep(POLL)
-
 
 if __name__=="__main__":
     main()
