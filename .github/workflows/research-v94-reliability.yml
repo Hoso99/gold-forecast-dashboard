@@ -51,3 +51,5 @@ jobs:
         run: python research/audits/v95_sell_features.py
       - name: Inventory point-in-time SELL and higher-timeframe features
         run: python research/audits/v95_feature_inventory.py
+      - name: Compare V9.5 higher-timeframe SELL context (descriptive only)
+        run: python research/audits/v95_context_comparison.py
