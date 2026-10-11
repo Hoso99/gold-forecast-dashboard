@@ -14,6 +14,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from v95_indicators import diagnostics
+from v95_biquote import fetch_context
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -231,7 +232,8 @@ def journal_decision(action,note,state):
          "m1_bar_start_utc":state.get("last_bar"),"decision":action,
          "reason":note,"source":"TWELVE_DATA_XAUUSD_M1_PROXY",
          "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
-         "diagnostics":state.get("diagnostics",{})}
+         "diagnostics":state.get("diagnostics",{}),
+         "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"})}
     with JOURNAL.open("a",encoding="utf-8") as out:
         out.write(json.dumps(row,sort_keys=True)+"\n")
     os.chmod(JOURNAL,0o600)
@@ -239,6 +241,13 @@ def journal_decision(action,note,state):
 def cycle():
     state=load()
     updated,action,note=evaluate(candles(),state)
+    # Context is logged independently. No assumed Biquote pressure or fabricated data.
+    # An unavailable optional context feed is explicitly recorded as UNKNOWN.
+    if os.getenv("V95_BIQUOTE_ENABLED","0")=="1":
+        try:
+            updated["biquote_context"]=fetch_context()
+        except Exception as exc:
+            updated["biquote_context"]={"risk":"UNKNOWN","error_type":type(exc).__name__}
     journal_decision(action,note,updated)
     save(updated)
     LOG.info("%s %s",action,note)
