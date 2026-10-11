@@ -18,6 +18,7 @@ from v95_indicators import diagnostics
 from v95_biquote import fetch_context
 from v95_research_votes import votes
 from v95_telegram_format import format_alert
+from v95_entry_exit_shadow import entry_diagnostics, exit_diagnostics
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -136,6 +137,7 @@ def evaluate(rows,state):
     price=latest["c"]
     state["diagnostics"]=diagnostics(rows,m5,m15,h1,h4)
     state["research_votes"]=votes(rows,m5,m15,h1,h4)
+    state["shadow_entry"]=entry_diagnostics(rows,m5,m15)
     sell_pressure=sum(max(x["o"]-x["c"],0) for x in rows[-10:])
     buy_pressure=sum(max(x["c"]-x["o"],0) for x in rows[-10:])
     total=buy_pressure+sell_pressure
@@ -148,6 +150,7 @@ def evaluate(rows,state):
         state["loss_day_utc"]=today
         state["realized_paper_loss"]=0.0
     pos=state.get("paper_position")
+    state["shadow_exit"]=exit_diagnostics(rows,m5,pos) if pos else {"status":"NO_POSITION"}
     if pos:
         entry,initial_stop=pos["entry"],pos["initial_stop"]
         risk=initial_stop-entry
@@ -239,6 +242,8 @@ def journal_decision(action,note,state):
          "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
          "diagnostics":state.get("diagnostics",{}),
          "research_votes":state.get("research_votes",{}),
+         "shadow_entry":state.get("shadow_entry",{}),
+         "shadow_exit":state.get("shadow_exit",{}),
          "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"})}
     with JOURNAL.open("a",encoding="utf-8") as out:
         out.write(json.dumps(row,sort_keys=True)+"\n")
