@@ -84,6 +84,16 @@ class PaperMonitorTests(unittest.TestCase):
                  "time":"2026-10-12T12:30:00Z"}]
         self.assertEqual(event_context(events,now)["risk"],"NORMAL")
 
+    def test_four_research_votes_are_not_claimed_independent(self):
+        from v95_research_votes import votes
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100+i*0.01,
+               "h":101+i*0.01,"l":99+i*0.01,"c":100+i*0.01} for i in range(30)]
+        got=votes(rows,rows,rows,rows,rows)
+        self.assertEqual(len(got["votes"]),4)
+        self.assertFalse(got["independence_verified"])
+        self.assertEqual(got["agreement"],0)
+
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
             with patch.object(mod,"urlopen") as network:
