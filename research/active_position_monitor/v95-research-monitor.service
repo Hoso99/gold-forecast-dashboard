@@ -1,0 +1,20 @@
+[Unit]
+Description=V9.5 XAU/USD SELL-only paper research monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/v95-research
+EnvironmentFile=/home/ubuntu/.config/v95-research/monitor.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/v95-research/.venv/bin/python /home/ubuntu/v95-research/research/active_position_monitor/v95_paper_monitor.py
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
