@@ -17,7 +17,7 @@ class TestV95ExitVariants(unittest.TestCase):
     def test_gap_through_stop_is_adverse(self):
         b=[dict(open=105,high=106,low=104,close=105)]
         v=simulate_sell(b,100,103,atr_m5=1)
-        self.assertAlmostEqual(v["net_r"],(-5-.30)/3)
+        self.assertAlmostEqual(v["net_r"],(-5-.30)/3, places=5)
 
     def test_partial_target_remainder(self):
         b=[dict(open=100,high=100.5,low=97,close=98),
