@@ -34,6 +34,7 @@ KEY=os.getenv("TWELVE_DATA_API_KEY","").strip()
 LOG=logging.getLogger("v95-paper")
 JOURNAL=Path(os.getenv("V95_JOURNAL_FILE",str(STATE.with_name("decisions.jsonl"))))
 TRADE_HISTORY=Path(os.getenv("V95_TRADE_HISTORY_FILE",str(STATE.with_name("trade_history.jsonl"))))
+CANDLE_CACHE=Path(os.getenv("V95_CANDLE_CACHE_FILE",str(STATE.with_name("m1_candle_cache.json"))))
 
 
 def send(message):
@@ -91,17 +92,62 @@ def seconds_until_utc_reset(now=None):
     return max(1,math.ceil((reset-now).total_seconds())+5)
 
 
+def _valid_bar(bar):
+    try:
+        t=dt.datetime.fromisoformat(bar["t"])
+        o,h,l,c=(float(bar[k]) for k in ("o","h","l","c"))
+        return (t.tzinfo is not None and t.utcoffset()==dt.timedelta(0)
+                and t.second==0 and t.microsecond==0
+                and all(math.isfinite(x) and x>0 for x in (o,h,l,c))
+                and l<=min(o,c)<=max(o,c)<=h)
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return False
+
+
+def _load_candle_cache():
+    """Only reuse candles previously retrieved from the same Twelve Data feed."""
+    try:
+        payload=json.loads(CANDLE_CACHE.read_text(encoding="utf-8"))
+        if payload.get("source")!="TWELVE_DATA_XAUUSD_M1":
+            return []
+        raw=payload["bars"]
+        if not isinstance(raw,list) or len(raw)>1500 or not all(_valid_bar(x) for x in raw):
+            return []
+        rows=[dict(x,t=dt.datetime.fromisoformat(x["t"]).astimezone(UTC)) for x in raw]
+        rows.sort(key=lambda x:x["t"])
+        if len({x["t"] for x in rows})!=len(rows):
+            return []
+        return rows
+    except (OSError, ValueError, TypeError, KeyError):
+        return []
+
+
+def _save_candle_cache(rows):
+    CANDLE_CACHE.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    tmp=CANDLE_CACHE.with_suffix(".tmp")
+    payload={"source":"TWELVE_DATA_XAUUSD_M1",
+             "bars":[dict(x,t=x["t"].isoformat()) for x in rows[-1000:]]}
+    with tmp.open("w",encoding="utf-8") as f:
+        json.dump(payload,f)
+    os.chmod(tmp,0o600)
+    tmp.replace(CANDLE_CACHE)
+
+
 def candles():
     if not KEY:
         raise RuntimeError("Missing TWELVE_DATA_API_KEY")
-    query=urlencode({"symbol":"XAU/USD","interval":"1min","outputsize":1000,
+    cached=_load_candle_cache()
+    # The initial request establishes a provider-consistent 720-bar baseline.
+    # Subsequent requests overlap the cache to catch missing minutes/revisions.
+    size=20 if len(cached)>=720 else 1000
+    query=urlencode({"symbol":"XAU/USD","interval":"1min","outputsize":size,
                      "timezone":"UTC","apikey":KEY,"format":"JSON"})
     with urlopen("https://api.twelvedata.com/time_series?"+query,timeout=30) as r:
         result=json.load(r)
     if not isinstance(result.get("values"),list):
         raise RuntimeError("Provider rejected XAU/USD M1 request")
     now=dt.datetime.now(UTC)
-    rows=[]
+    fresh=[]
     for v in result["values"]:
         t=dt.datetime.strptime(v["datetime"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
         if t+dt.timedelta(minutes=1)>now-dt.timedelta(seconds=10):
@@ -109,16 +155,30 @@ def candles():
         o,h,l,c=(float(v[k]) for k in ("open","high","low","close"))
         if not all(math.isfinite(x) and x>0 for x in (o,h,l,c)) or not l<=min(o,c)<=max(o,c)<=h:
             raise RuntimeError("Invalid OHLC")
-        rows.append({"t":t,"o":o,"h":h,"l":l,"c":c})
-    rows.sort(key=lambda x:x["t"])
-    if len(rows)<720 or len({x["t"] for x in rows})!=len(rows):
-        raise RuntimeError("Insufficient or duplicate M1 history")
+        fresh.append({"t":t,"o":o,"h":h,"l":l,"c":c})
+    if len({x["t"] for x in fresh})!=len(fresh):
+        raise RuntimeError("Duplicate provider M1 timestamps")
+    fresh.sort(key=lambda x:x["t"])
+    if not fresh:
+        raise RuntimeError("No completed provider M1 candles")
+    # Refuse silently combining inconsistent sources or provider revisions.
+    existing={x["t"]:x for x in cached}
+    for x in fresh:
+        previous=existing.get(x["t"])
+        if previous and any(abs(previous[k]-x[k])>0.00001 for k in ("o","h","l","c")):
+            raise RuntimeError("Provider M1 candle revision; no signals")
+    merged={x["t"]:x for x in cached}
+    merged.update({x["t"]:x for x in fresh})
+    rows=sorted(merged.values(),key=lambda x:x["t"])[-1000:]
+    # A cache must never bypass the same completed-candle safety checks.
+    if len(rows)<720:
+        raise RuntimeError("Insufficient M1 history")
     if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
         raise RuntimeError("Stale provider data; no signals")
-    # Do not fill missing candles. A market closure is a legitimate reason to wait.
     tail=rows[-720:]
     if any(b["t"]-a["t"]!=dt.timedelta(minutes=1) for a,b in zip(tail,tail[1:])):
         raise RuntimeError("Gap in required M1 history; no signals")
+    _save_candle_cache(rows)
     return rows
 
 
