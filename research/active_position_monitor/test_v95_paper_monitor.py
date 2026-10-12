@@ -199,6 +199,25 @@ class PaperMonitorTests(unittest.TestCase):
                 mod.save({"last_bar":"2026-10-12","paper_position":None})
                 self.assertEqual(mod.load()["last_bar"],"2026-10-12")
 
+    def test_daily_quota_429_detected(self):
+        import io
+        from urllib.error import HTTPError
+        body=b'{"code":429,"message":"You have run out of API credits for the day. 852 API credits were used."}'
+        error=HTTPError("https://example.test",429,"Too Many Requests",{},io.BytesIO(body))
+        self.assertTrue(mod.daily_quota_exhausted(error))
+
+    def test_minute_429_does_not_trigger_daily_pause(self):
+        import io
+        from urllib.error import HTTPError
+        error=HTTPError("https://example.test",429,"Too Many Requests",{},io.BytesIO(b'{"message":"Minute rate limit exceeded"}'))
+        self.assertFalse(mod.daily_quota_exhausted(error))
+
+    def test_quota_reset_waits_until_next_utc_midnight(self):
+        import datetime as dt
+        now=dt.datetime(2026,10,12,23,59,0,tzinfo=dt.timezone.utc)
+        self.assertEqual(mod.seconds_until_utc_reset(now),65)
+        self.assertGreaterEqual(mod.POLL,150)
+
 
 if __name__=="__main__":
     unittest.main()
