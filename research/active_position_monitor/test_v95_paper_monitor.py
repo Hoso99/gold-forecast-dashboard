@@ -1,5 +1,7 @@
 """Offline safeguards for V9.5 Oracle paper monitor."""
 import datetime as dt
+import os
+from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -83,6 +85,80 @@ class PaperMonitorTests(unittest.TestCase):
         events=[{"countryCode":"US","name":"FOMC","timeMode":"tentative",
                  "time":"2026-10-12T12:30:00Z"}]
         self.assertEqual(event_context(events,now)["risk"],"NORMAL")
+
+    def _candidate_evaluation(self,news_context,existing_position=None,detector=True):
+        """Synthetic completed-bar candidate; no network or broker interaction."""
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":91.,"h":92.,
+               "l":89.,"c":90.} for i in range(720)]
+        m15=[{"h":100.,"l":80.,"c":95.} for _ in range(18)]
+        m5=[{"c":float(100-i)} for i in range(6)]
+        h1=[{"c":100.},{"c":99.},{"c":98.}]
+        h4=[{"c":100.},{"c":99.}]
+        state={"last_bar":None,"paper_position":existing_position,
+               "realized_paper_loss":0.,"loss_day_utc":"2026-10-12"}
+        bars={5:m5,15:m15,60:h1,240:h4}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(mod,"aggregate",side_effect=lambda _r,n:bars[n]))
+            stack.enter_context(patch.object(mod,"atr",return_value=1.))
+            stack.enter_context(patch.object(mod,"diagnostics",return_value={}))
+            stack.enter_context(patch.object(mod,"votes",return_value={}))
+            stack.enter_context(patch.object(mod,"entry_diagnostics",return_value={}))
+            stack.enter_context(patch.object(mod,"exit_diagnostics",return_value={}))
+            stack.enter_context(patch.object(mod,"detect_core_sell",return_value={
+                "structural_sell":detector,"enhanced_support_break":detector}))
+            stack.enter_context(patch.dict(os.environ,{
+                "V95_PAPER_EQUITY":"10000","V95_NEWS_GATE_ENABLED":"1"}))
+            return mod.evaluate(rows,state,news_context)
+
+    def test_news_gate_blocks_imminent_new_sell(self):
+        state,action,note=self._candidate_evaluation({
+            "risk":"IMMINENT","events":[{"name":"CPI","minutes_to_event":12}]})
+        self.assertEqual(action,"NEWS_BLOCKED")
+        self.assertIn("CPI",note)
+        self.assertIsNone(state["paper_position"])
+
+    def test_news_gate_fails_closed_on_unknown(self):
+        state,action,_=self._candidate_evaluation({"risk":"UNKNOWN"})
+        self.assertEqual(action,"NEWS_BLOCKED")
+        self.assertIsNone(state["paper_position"])
+
+    def test_news_gate_allows_verified_normal_candidate(self):
+        state,action,_=self._candidate_evaluation({"risk":"NORMAL","events":[]})
+        self.assertEqual(action,"PAPER_SELL_ENTRY")
+        self.assertEqual(state["paper_position"]["target"],67.)
+
+    def test_news_gate_does_not_change_wait_sell(self):
+        state,action,_=self._candidate_evaluation({"risk":"UNKNOWN"},detector=False)
+        self.assertEqual(action,"WAIT_SELL")
+        self.assertIsNone(state["paper_position"])
+
+    def test_news_gate_never_blocks_existing_stop(self):
+        pos={"entry":101.,"initial_stop":103.,"current_stop":91.,
+             "target":97.,"paper_units":1.,"partial_proposed":False,
+             "partial_acknowledged":False}
+        state,action,_=self._candidate_evaluation({"risk":"UNKNOWN"},existing_position=pos)
+        self.assertEqual(action,"SL_TOUCHED")
+        self.assertIsNone(state["paper_position"])
+
+    def test_calendar_fetch_does_not_require_quote(self):
+        from v95_biquote import fetch_calendar_context
+        now=dt.datetime(2026,10,12,12,0,tzinfo=dt.timezone.utc)
+        events=[{"countryCode":"US","name":"CPI","timeMode":"exact",
+                 "time":"2026-10-12T12:10:00Z"}]
+        with patch("v95_biquote.get_json",return_value=events) as get_json:
+            self.assertEqual(fetch_calendar_context(now)["risk"],"IMMINENT")
+            self.assertEqual(get_json.call_count,1)
+            self.assertIn("/api/calendar?",get_json.call_args.args[0])
+
+    def test_news_window_boundaries(self):
+        from v95_biquote import event_context
+        now=dt.datetime(2026,10,12,12,0,tzinfo=dt.timezone.utc)
+        for offset,expected in [(30,"IMMINENT"),(-15,"IMMINENT"),
+                                (31,"BUILDING"),(-16,"NORMAL")]:
+            event={"countryCode":"US","name":"FOMC","timeMode":"exact",
+                   "time":(now+dt.timedelta(minutes=offset)).isoformat()}
+            self.assertEqual(event_context([event],now)["risk"],expected)
 
     def test_four_research_votes_are_not_claimed_independent(self):
         from v95_research_votes import votes
