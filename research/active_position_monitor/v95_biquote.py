@@ -40,7 +40,8 @@ def event_context(events,now=None):
     buildup=any(0<=x["minutes_to_event"]<=120 for x in relevant)
     return {"events":relevant[:10],"risk":"IMMINENT" if imminent else "BUILDING" if buildup else "NORMAL"}
 
-def fetch_context(now=None):
+def fetch_calendar_context(now=None):
+    """Fetch high-importance US events independently of XAUUSD quote availability."""
     now=now or dt.datetime.now(UTC)
     start=(now-dt.timedelta(hours=1)).isoformat().replace("+00:00","Z")
     end=(now+dt.timedelta(hours=5)).isoformat().replace("+00:00","Z")
@@ -48,7 +49,13 @@ def fetch_context(now=None):
     events=get_json("https://biquote.io/api/calendar?"+params)
     if not isinstance(events,list):
         raise ValueError("Biquote calendar unexpected response")
-    result=event_context(events,now)
+    return event_context(events,now)
+
+
+def fetch_context(now=None):
+    """Optional quote + macro context; news gate uses fetch_calendar_context instead."""
+    now=now or dt.datetime.now(UTC)
+    result=fetch_calendar_context(now)
     quote=get_json("https://biquote.io/api/XAUUSD?allowStale=false")
     if not isinstance(quote,dict) or quote.get("stale") is not False or quote.get("marketState")!="open":
         raise ValueError("Biquote quote stale or market closed")
