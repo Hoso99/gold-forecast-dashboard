@@ -218,6 +218,44 @@ class PaperMonitorTests(unittest.TestCase):
         self.assertEqual(mod.seconds_until_utc_reset(now),65)
         self.assertGreaterEqual(mod.POLL,150)
 
+    def test_candle_cache_roundtrip_and_source_guard(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"m1.json"
+            t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+            rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+                   "l":99.,"c":100.} for i in range(720)]
+            with patch.object(mod,"CANDLE_CACHE",path):
+                mod._save_candle_cache(rows)
+                self.assertEqual(len(mod._load_candle_cache()),720)
+                payload=json.loads(path.read_text())
+                payload["source"]="UNKNOWN_FEED"
+                path.write_text(json.dumps(payload))
+                self.assertEqual(mod._load_candle_cache(),[])
+
+    def test_candle_cache_rejects_invalid_ohlc(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"m1.json"
+            with patch.object(mod,"CANDLE_CACHE",path):
+                path.write_text(json.dumps({"source":"TWELVE_DATA_XAUUSD_M1",
+                    "bars":[{"t":"2026-10-12T00:00:00+00:00",
+                             "o":100,"h":99,"l":101,"c":100}]}))
+                self.assertEqual(mod._load_candle_cache(),[])
+
+    def test_cached_candles_require_fresh_provider_response(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"m1.json"
+            t=dt.datetime.now(dt.timezone.utc).replace(second=0,microsecond=0)-dt.timedelta(minutes=721)
+            rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+                   "l":99.,"c":100.} for i in range(720)]
+            with patch.object(mod,"CANDLE_CACHE",path), patch.object(mod,"KEY","test-key"):
+                mod._save_candle_cache(rows)
+                with patch.object(mod,"urlopen",side_effect=RuntimeError("provider unavailable")):
+                    with self.assertRaisesRegex(RuntimeError,"provider unavailable"):
+                        mod.candles()
+
 
 if __name__=="__main__":
     unittest.main()
