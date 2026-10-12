@@ -15,7 +15,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from v95_indicators import diagnostics
-from v95_biquote import fetch_context
+from v95_biquote import fetch_context, fetch_calendar_context
 from v95_research_votes import votes
 from v95_telegram_format import format_alert
 from v95_entry_exit_shadow import entry_diagnostics, exit_diagnostics
@@ -125,7 +125,7 @@ def atr(bars,n=14):
     return sum(tr[-n:])/n if len(tr)>=n else None
 
 
-def evaluate(rows,state):
+def evaluate(rows,state,news_context=None):
     m5=aggregate(rows,5)
     m15=aggregate(rows,15)
     h1=aggregate(rows,60)
@@ -222,6 +222,19 @@ def evaluate(rows,state):
             f"bearish liquidity sweep={core_detectors.get('bearish_liquidity_sweep')}, "
             f"H1 bearish={trend}, H4 advisory bearish={h4_bearish}, "
             f"support buffer={location}")
+    # Only new paper entries are subject to the USD calendar gate. Existing
+    # positions have already returned above, so protective exits never depend
+    # on calendar availability. Missing or unverified context fails closed.
+    if os.getenv("V95_NEWS_GATE_ENABLED","1")=="1":
+        news_risk=(news_context or {}).get("risk","UNKNOWN")
+        if news_risk not in ("NORMAL","BUILDING"):
+            events=(news_context or {}).get("events",[])
+            event_name=next((x.get("name","USD event") for x in events
+                             if -15<=x.get("minutes_to_event",999)<=30),"")
+            return state,"NEWS_BLOCKED",(
+                f"New paper SELL entry blocked: USD calendar risk={news_risk}"
+                + (f", event={event_name}" if event_name else "")
+            )
     stop=max(x["h"] for x in m15[-5:])+1.5*m15atr
     if stop<=price:
         return state,"WAIT_DATA","Invalid structure/ATR stop"
@@ -257,7 +270,8 @@ def journal_decision(action,note,state):
          "core_sell_detectors":state.get("core_sell_detectors",{}),
          "shadow_entry":state.get("shadow_entry",{}),
          "shadow_exit":state.get("shadow_exit",{}),
-         "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"})}
+         "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"}),
+         "news_context":state.get("news_context",{"risk":"UNKNOWN"})}
     with JOURNAL.open("a",encoding="utf-8") as out:
         out.write(json.dumps(row,sort_keys=True)+"\n")
     os.chmod(JOURNAL,0o600)
@@ -295,7 +309,18 @@ def cycle():
             LOG.error("V9.5 trade history recording failed; retry on next cycle: %s", type(exc).__name__)
         LOG.info("%s %s",action,note)
         return action
-    updated,action,note=evaluate(candles(),state)
+    rows=candles()
+    # Calendar check happens before any new paper SELL entry is authorized.
+    # A calendar failure must not prevent SL/TP and early-exit evaluation.
+    if os.getenv("V95_NEWS_GATE_ENABLED","1")=="1":
+        try:
+            news_context=fetch_calendar_context()
+        except Exception as exc:
+            news_context={"risk":"UNKNOWN","error_type":type(exc).__name__}
+    else:
+        news_context={"risk":"DISABLED"}
+    state["news_context"]=news_context
+    updated,action,note=evaluate(rows,state,news_context)
     updated["last_event"]=action
     # Context is logged independently. No assumed Biquote pressure or fabricated data.
     # An unavailable optional context feed is explicitly recorded as UNKNOWN.
