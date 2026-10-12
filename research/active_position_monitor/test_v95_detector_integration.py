@@ -43,7 +43,8 @@ class DetectorIntegrationTests(unittest.TestCase):
         state = {"last_bar": None, "paper_position": None}
 
         with patch.dict(os.environ, {"V95_PAPER_EQUITY": "10000"}):
-            result, action, note = monitor.evaluate(rows, state)
+            # Isolate detector behavior from the independently tested news gate.
+            result, action, note = monitor.evaluate(rows, state, {"risk":"NORMAL","events":[]})
 
         self.assertEqual(
             action,
