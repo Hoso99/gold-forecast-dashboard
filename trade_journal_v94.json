@@ -1244,5 +1244,25 @@
     "status": "OPEN",
     "stop_loss": 4216.5648,
     "take_profit": 4131.7892
+  },
+  {
+    "basis": "10-candle SELL + quality CONFIRMED",
+    "buy_power": 0.3873,
+    "entry": 4176.2372,
+    "model_time": "2026-10-12T08:00:00+00:00",
+    "pressure_acceleration": -0.3069,
+    "reward_risk": 2.0,
+    "sell_candles_10": 6,
+    "sell_candles_2": 2,
+    "sell_candles_5": 3,
+    "sell_power": 0.6127,
+    "sell_quality_checks_passed": 9,
+    "sell_quality_checks_total": 9,
+    "sell_quality_score": 1.0,
+    "sell_quality_status": "CONFIRMED",
+    "side": "SELL",
+    "status": "OPEN",
+    "stop_loss": 4196.6975,
+    "take_profit": 4135.3165
   }
 ]
