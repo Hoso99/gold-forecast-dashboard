@@ -4,6 +4,7 @@ REST M1 polling. Completed-candle signals only, conservative WAIT on stale/gaps.
 Hypothetical fills use completed candle close; never represent executable quotes.
 """
 import argparse
+from urllib.error import HTTPError
 import datetime as dt
 import json
 import logging
@@ -25,7 +26,9 @@ from v95_trade_history import record_closed_trade
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
 STATE=Path(os.getenv("V95_STATE_FILE",str(Path.home()/".local/state/v95-research/state.json")))
-POLL=max(30,int(os.getenv("V95_POLL_SECONDS","60")))
+POLL=max(150,int(os.getenv("V95_POLL_SECONDS","150")))
+# Basic 800-credit daily plan: 150-second minimum is <=576 requests/day.
+# Other clients using the same key may still exhaust the shared quota.
 ALERTS=os.getenv("V95_TELEGRAM_ENABLED","0")=="1"
 KEY=os.getenv("TWELVE_DATA_API_KEY","").strip()
 LOG=logging.getLogger("v95-paper")
@@ -67,6 +70,25 @@ def save(state):
         json.dump(state,f,indent=2)
     os.chmod(tmp,0o600)
     tmp.replace(STATE)
+
+
+def daily_quota_exhausted(exc):
+    """Distinguish daily-credit exhaustion from a transient minute-level 429."""
+    if not isinstance(exc, HTTPError) or exc.code != 429:
+        return False
+    try:
+        payload=json.loads(exc.read(2048).decode("utf-8"))
+    except (ValueError, UnicodeError, OSError):
+        return False
+    message=str(payload.get("message","")).lower()
+    return "credits for the day" in message or "daily limit" in message
+
+
+def seconds_until_utc_reset(now=None):
+    now=now or dt.datetime.now(UTC)
+    tomorrow=(now+dt.timedelta(days=1)).date()
+    reset=dt.datetime.combine(tomorrow,dt.time.min,tzinfo=UTC)
+    return max(1,math.ceil((reset-now).total_seconds())+5)
 
 
 def candles():
@@ -348,16 +370,24 @@ def main():
     parser.add_argument("--once",action="store_true")
     args=parser.parse_args()
     while True:
+        delay=POLL
         try:
             cycle()
         except Exception as exc:
+            if daily_quota_exhausted(exc):
+                delay=seconds_until_utc_reset()
+                LOG.warning("WAIT_DATA: Twelve Data daily quota exhausted; next request after UTC reset (%s seconds)",delay)
+                if args.once:
+                    raise SystemExit(1)
+                time.sleep(delay)
+                continue
             safe=str(exc).replace(KEY,"[REDACTED]") if KEY else str(exc)
             LOG.warning("WAIT_DATA: %s",type(exc).__name__+": "+safe)
             if args.once:
                 raise SystemExit(1)
         if args.once:
             break
-        time.sleep(POLL)
+        time.sleep(delay)
 
 if __name__=="__main__":
     main()
