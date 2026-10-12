@@ -20,6 +20,7 @@ from v95_research_votes import votes
 from v95_telegram_format import format_alert
 from v95_entry_exit_shadow import entry_diagnostics, exit_diagnostics
 from v95_core_sell_detectors import detect as detect_core_sell
+from v95_trade_history import record_closed_trade
 
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
@@ -29,6 +30,7 @@ ALERTS=os.getenv("V95_TELEGRAM_ENABLED","0")=="1"
 KEY=os.getenv("TWELVE_DATA_API_KEY","").strip()
 LOG=logging.getLogger("v95-paper")
 JOURNAL=Path(os.getenv("V95_JOURNAL_FILE",str(STATE.with_name("decisions.jsonl"))))
+TRADE_HISTORY=Path(os.getenv("V95_TRADE_HISTORY_FILE",str(STATE.with_name("trade_history.jsonl"))))
 
 
 def send(message):
@@ -287,6 +289,10 @@ def cycle():
             journal_decision(action,note,state)
         state["last_event"]=action
         save(state)
+        try:
+            record_closed_trade(state, TRADE_HISTORY)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            LOG.error("V9.5 trade history recording failed; retry on next cycle: %s", type(exc).__name__)
         LOG.info("%s %s",action,note)
         return action
     updated,action,note=evaluate(candles(),state)
@@ -300,6 +306,10 @@ def cycle():
             updated["biquote_context"]={"risk":"UNKNOWN","error_type":type(exc).__name__}
     journal_decision(action,note,updated)
     save(updated)
+    try:
+        record_closed_trade(updated, TRADE_HISTORY)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        LOG.error("V9.5 trade history recording failed; retry on next cycle: %s", type(exc).__name__)
     LOG.info("%s %s",action,note)
     if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
                   "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
