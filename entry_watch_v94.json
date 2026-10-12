@@ -1,9 +1,9 @@
 {
   "basis": "SELL-only mode: no SELL signal",
-  "buy_power": 0.589826,
-  "entry_reference": 4213.2349,
-  "model_time": "2026-10-12T02:00:00+00:00",
-  "sell_power": 0.410174,
+  "buy_power": 0.582625,
+  "entry_reference": 4211.7354,
+  "model_time": "2026-10-12T02:30:00+00:00",
+  "sell_power": 0.417375,
   "side": "WAIT",
   "structure_reason": "no directional setup",
   "threshold": null
