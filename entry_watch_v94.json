@@ -1,9 +1,9 @@
 {
-  "basis": "10-candle SELL blocked: quality REJECTED",
-  "buy_power": 0.41326,
-  "entry_reference": 4155.9215,
-  "model_time": "2026-10-13T01:30:00+00:00",
-  "sell_power": 0.58674,
+  "basis": "SELL-only mode: no SELL signal",
+  "buy_power": 0.526128,
+  "entry_reference": 4168.1691,
+  "model_time": "2026-10-13T02:00:00+00:00",
+  "sell_power": 0.473872,
   "side": "WAIT",
   "structure_reason": "no directional setup",
   "threshold": null
