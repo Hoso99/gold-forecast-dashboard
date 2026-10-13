@@ -1,0 +1,29 @@
+name: V9.5 Oracle runner research healthcheck
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v95-oracle-runner-healthcheck
+  cancel-in-progress: false
+
+jobs:
+  research-healthcheck:
+    if: github.ref == 'refs/heads/research/v95-detector-implementation'
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 4
+    steps:
+      - name: Verify Oracle research runner (no trading or deployment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "V95_RESEARCH_RUNNER_OK"
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          uname -sm
+          test "${RUNNER_NAME}" = "v94-research-monitor"
+          echo "Research runner identity verified"
