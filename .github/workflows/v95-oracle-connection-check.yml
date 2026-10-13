@@ -1,0 +1,53 @@
+name: V9.5 Oracle research connection check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v95-oracle-connection-check
+  cancel-in-progress: false
+
+jobs:
+  read-only-connection:
+    if: github.ref == 'refs/heads/research/v95-detector-implementation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: v95-oracle-research
+    steps:
+      - name: Validate required secrets
+        env:
+          HOST: ${{ secrets.V95_ORACLE_HOST }}
+          USER: ${{ secrets.V95_ORACLE_USER }}
+          KEY: ${{ secrets.V95_ORACLE_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.V95_ORACLE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for value in "$HOST" "$USER" "$KEY" "$KNOWN_HOSTS"; do
+            if [ -z "$value" ]; then
+              echo "Required V9.5 Oracle connection secret is missing."
+              exit 1
+            fi
+          done
+
+      - name: Connect read-only (no deployment)
+        env:
+          HOST: ${{ secrets.V95_ORACLE_HOST }}
+          USER: ${{ secrets.V95_ORACLE_USER }}
+          KEY: ${{ secrets.V95_ORACLE_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.V95_ORACLE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/v95_oracle_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/v95_oracle_key" "$HOME/.ssh/known_hosts"
+          ssh -T -i "$HOME/.ssh/v95_oracle_key" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$USER@$HOST" 'printf "V95_ORACLE_SSH_OK\\n"; id -un; uname -s'
