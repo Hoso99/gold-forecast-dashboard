@@ -1269,7 +1269,10 @@
     "basis": "10-candle SELL + quality CONFIRMED",
     "buy_power": 0.334,
     "entry": 4160.2529,
+    "exit_price": 4181.9488,
+    "exit_time": "2026-10-13T03:15:00+00:00",
     "model_time": "2026-10-13T00:45:00+00:00",
+    "outcome_r": -1.0,
     "pressure_acceleration": -0.2303,
     "reward_risk": 2.0,
     "sell_candles_10": 7,
@@ -1281,7 +1284,7 @@
     "sell_quality_score": 1.0,
     "sell_quality_status": "CONFIRMED",
     "side": "SELL",
-    "status": "OPEN",
+    "status": "LOSS",
     "stop_loss": 4181.9488,
     "take_profit": 4116.8612
   }
