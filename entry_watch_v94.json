@@ -1,9 +1,9 @@
 {
-  "basis": "10-candle SELL blocked: quality MIXED",
-  "buy_power": 0.357188,
-  "entry_reference": 4148.6929,
-  "model_time": "2026-10-14T07:00:00+00:00",
-  "sell_power": 0.642812,
+  "basis": "SELL-only mode: no SELL signal",
+  "buy_power": 0.464029,
+  "entry_reference": 4149.7543,
+  "model_time": "2026-10-14T07:45:00+00:00",
+  "sell_power": 0.535971,
   "side": "WAIT",
   "structure_reason": "no directional setup",
   "threshold": null
