@@ -164,12 +164,22 @@ def _required_windows_valid(rows, m5, m15, h1):
     if len(rows)<10 or not _sequence_valid(rows[-10:],1):
         return False,"WAIT_DATA: gap in last 10 M1 SELL-pressure candles"
     requirements=((m5,6,5,"M5"),(m15,18,15,"M15"),(h1,3,60,"H1"))
+    latest_m1=rows[-1]["t"]
     for bars,needed,minutes,label in requirements:
         if len(bars)<needed:
             return False,f"WAIT_DATA: insufficient completed {label} bars"
         tail=bars[-needed:]
         if not _sequence_valid(tail,minutes):
             return False,f"WAIT_DATA: gap in required {label} indicator window"
+        # Do not let aggregation silently skip a missing newest timeframe bar
+        # and then evaluate a stale, older indicator window.
+        bucket_start=latest_m1.replace(second=0,microsecond=0)
+        bucket_start=bucket_start.replace(minute=(bucket_start.hour*60+bucket_start.minute)//minutes*minutes%60,
+                                          hour=(bucket_start.hour*60+bucket_start.minute)//minutes)
+        if latest_m1 < bucket_start+dt.timedelta(minutes=minutes-1):
+            bucket_start-=dt.timedelta(minutes=minutes)
+        if tail[-1]["t"] != bucket_start:
+            return False,f"WAIT_DATA: latest required {label} bar missing or incomplete"
     return True,"READY: required SELL signal windows verified"
 
 def candles():
