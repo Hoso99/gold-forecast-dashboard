@@ -26,9 +26,10 @@ from v95_trade_history import record_closed_trade
 UTC=dt.timezone.utc
 ROOT=Path(__file__).resolve().parent
 STATE=Path(os.getenv("V95_STATE_FILE",str(Path.home()/".local/state/v95-research/state.json")))
-POLL=max(150,int(os.getenv("V95_POLL_SECONDS","150")))
-# Basic 800-credit daily plan: 150-second minimum is <=576 requests/day.
-# Other clients using the same key may still exhaust the shared quota.
+POLL=max(300,int(os.getenv("V95_POLL_SECONDS","300")))
+# Default 5-minute M1 polling: at most 288 scheduled Twelve Data requests/day.
+# The Basic 800-credit daily quota is shared with all other API clients.
+# An explicit environment override can poll less often, never more often.
 ALERTS=os.getenv("V95_TELEGRAM_ENABLED","0")=="1"
 KEY=os.getenv("TWELVE_DATA_API_KEY","").strip()
 LOG=logging.getLogger("v95-paper")
