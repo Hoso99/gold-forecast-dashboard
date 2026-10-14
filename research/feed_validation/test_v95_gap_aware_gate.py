@@ -17,7 +17,7 @@ def aggregate(bars, minutes):
     groups = {}
     for r in bars:
         t = r["t"]
-        start = t.replace(hour=0, minute=(t.minute // minutes) * minutes) if minutes < 60 else (
+        start = t.replace(minute=(t.minute // minutes) * minutes) if minutes < 60 else (
             t.replace(hour=(t.hour // (minutes // 60)) * (minutes // 60), minute=0))
         groups.setdefault(start, []).append(r)
     out = []
