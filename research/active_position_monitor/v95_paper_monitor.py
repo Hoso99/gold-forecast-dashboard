@@ -173,9 +173,9 @@ def _required_windows_valid(rows, m5, m15, h1):
             return False,f"WAIT_DATA: gap in required {label} indicator window"
         # Do not let aggregation silently skip a missing newest timeframe bar
         # and then evaluate a stale, older indicator window.
-        bucket_start=latest_m1.replace(second=0,microsecond=0)
-        bucket_start=bucket_start.replace(minute=(bucket_start.hour*60+bucket_start.minute)//minutes*minutes%60,
-                                          hour=(bucket_start.hour*60+bucket_start.minute)//minutes)
+        midnight=latest_m1.replace(hour=0,minute=0,second=0,microsecond=0)
+        minute_of_day=latest_m1.hour*60+latest_m1.minute
+        bucket_start=midnight+dt.timedelta(minutes=(minute_of_day//minutes)*minutes)
         if latest_m1 < bucket_start+dt.timedelta(minutes=minutes-1):
             bucket_start-=dt.timedelta(minutes=minutes)
         if tail[-1]["t"] != bucket_start:
