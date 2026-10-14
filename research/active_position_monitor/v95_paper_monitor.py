@@ -214,9 +214,9 @@ def candles():
         raise RuntimeError("Insufficient M1 history")
     if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
         raise RuntimeError("Stale provider data; no signals")
-    tail=rows[-720:]
-    if not _sequence_valid(tail,1):
-        raise RuntimeError("Gap in required M1 history during an open market session; no signals")
+    # Do not let an old gap anywhere in the 720-bar context suppress a SELL.
+    # evaluate() validates the exact M1/M5/M15/H1 windows used by the entry rules.
+    # A gap inside one of those required windows still fails closed as WAIT_DATA.
     _save_candle_cache(rows)
     return rows
 
