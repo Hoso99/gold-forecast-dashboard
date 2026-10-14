@@ -269,6 +269,16 @@ class PaperMonitorTests(unittest.TestCase):
         b=dt.datetime(2026,10,12,10,2,tzinfo=dt.timezone.utc)
         self.assertFalse(mod._sequence_valid([{"t":a},{"t":b}],1))
 
+    def test_old_gap_outside_sell_windows_does_not_block(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=20]
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertTrue(ok,reason)
+
     def test_recent_m1_gap_blocks_sell_evaluation(self):
         t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
         rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
