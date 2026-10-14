@@ -8,6 +8,8 @@ on:
       - 'research/feed_validation/test_v95_recovery_dry_run.py'
       - 'research/feed_validation/v95_gap_aware_gate.py'
       - 'research/feed_validation/test_v95_gap_aware_gate.py'
+      - 'research/active_position_monitor/v95_paper_monitor.py'
+      - 'research/active_position_monitor/test_v95_paper_monitor.py'
       - '.github/workflows/v95-recovery-research-tests.yml'
   workflow_dispatch:
 permissions:
@@ -23,5 +25,7 @@ jobs:
           python-version: '3.12'
       - name: Offline gap and candidate tests
         run: python -m unittest discover -s research/feed_validation -p 'test_v95_*.py' -v
+      - name: Paper monitor offline safeguards
+        run: python -m unittest discover -s research/active_position_monitor -p 'test_v95_*.py' -v
       - name: Syntax check
-        run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py
+        run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py research/active_position_monitor/v95_paper_monitor.py
