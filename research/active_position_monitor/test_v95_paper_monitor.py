@@ -257,5 +257,40 @@ class PaperMonitorTests(unittest.TestCase):
                         mod.candles()
 
 
+    def test_expected_daily_market_closure_does_not_count_as_missing_candles(self):
+        a=dt.datetime(2026,10,12,20,59,tzinfo=dt.timezone.utc)  # 16:59 New York
+        b=dt.datetime(2026,10,12,22,0,tzinfo=dt.timezone.utc)   # 18:00 New York
+        bars=[{"t":a},{"t":b}]
+        self.assertTrue(mod._sequence_valid(bars,1))
+
+    def test_missing_open_session_m1_candle_is_rejected(self):
+        a=dt.datetime(2026,10,12,10,0,tzinfo=dt.timezone.utc)
+        b=dt.datetime(2026,10,12,10,2,tzinfo=dt.timezone.utc)
+        self.assertFalse(mod._sequence_valid([{"t":a},{"t":b}],1))
+
+    def test_recent_m1_gap_blocks_sell_evaluation(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=715]
+        self.assertFalse(mod._sequence_valid(rows[-10:],1))
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertFalse(ok)
+        self.assertIn("gap",reason.lower())
+
+    def test_gap_inside_open_market_m15_window_is_rejected(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=650]
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertFalse(ok)
+        self.assertIn("gap",reason.lower())
+
+
 if __name__=="__main__":
     unittest.main()
