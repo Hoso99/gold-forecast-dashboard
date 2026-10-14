@@ -1,28 +1,20 @@
-"""Research-only adapter for optional H4 diagnostics.
-
-Does not alter the executable V9.5 SELL detectors, paper state, or order logic.
-Import only after the existing monitor has been reviewed and backed up.
-"""
-from v95_indicators import diagnostics
+"""Optional H4 research diagnostics; never used to authorize SELL entries."""
+from v95_indicators import diagnostics, rsi, pivot, pressure
 from v95_research_votes import votes
 
-
 def evaluate_optional_h4(m1, m5, m15, h1, h4):
-    """Return existing diagnostics and research votes without fabricating H4.
-
-    Research trend votes that require H4 are explicitly unavailable, not false.
-    Existing research-vote arithmetic is left untouched whenever H4 is valid.
-    """
     info = diagnostics(m1, m5, m15, h1, h4)
     if len(h4) >= 2:
         return info, votes(m1, m5, m15, h1, h4)
     info["h4_bearish"] = None
-    # Calculate non-H4 research votes through the original function with
-    # an empty H4? That function refuses all votes, so do not invent substitutes.
-    return info, {
-        "status": "H4_UNAVAILABLE",
-        "votes": {},
-        "trend_vote": "UNAVAILABLE",
-        "reason": "H4-dependent research votes skipped; core SELL logic unaffected",
-        "independence_verified": False,
-    }
+    if min(len(m1), len(m5), len(m15), len(h1)) < 2:
+        return info, {"status": "INSUFFICIENT_DATA", "votes": {}, "independence_verified": False}
+    strength = rsi([bar["c"] for bar in m15], 14)
+    structure = len(m15) >= 6 and m15[-1]["c"] < min(bar["l"] for bar in m15[-5:-1]) and m15[-1]["c"] < pivot(h1[-2])
+    momentum = len(m5) >= 5 and sum(m5[-i]["c"] < m5[-i-1]["c"] for i in range(1,5)) >= 3 and strength is not None and strength < 50
+    flow = pressure(m1,10) >= 60 and pressure(m15,10) >= 55
+    return info, {"status": "PARTIAL_RESEARCH_ONLY_UNVALIDATED",
+                  "votes": {"trend": None, "structure": bool(structure),
+                            "momentum": bool(momentum), "candle_flow_proxy": bool(flow)},
+                  "agreement_available_votes": sum((structure, momentum, flow)),
+                  "independence_verified": False}
