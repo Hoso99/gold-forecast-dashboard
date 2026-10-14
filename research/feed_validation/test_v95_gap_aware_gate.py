@@ -54,10 +54,13 @@ class GateTests(unittest.TestCase):
         self.assertFalse(check(bars, aggregate, now=bars[-1]["t"] +
                                dt.timedelta(minutes=5))[0])
 
-    def test_older_latest_aggregate_rejected(self):
-        self.assertFalse(self.verify(rows(1190))[0] if False else
-                         check(rows(1190), aggregate,
-                               now=BASE + dt.timedelta(minutes=1190, seconds=10))[0])
+    def test_incomplete_current_h4_is_normal(self):
+        # At 19:50 UTC the 16:00-20:00 H4 bar is not complete.
+        # The most recent valid H4 bar is 12:00-16:00.
+        bars = rows(1190)
+        allowed, reason, _ = check(
+            bars, aggregate, now=BASE + dt.timedelta(minutes=1190, seconds=10))
+        self.assertTrue(allowed, reason)
 
 
 if __name__ == "__main__":
