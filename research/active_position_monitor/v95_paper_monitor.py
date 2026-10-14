@@ -34,23 +34,118 @@ TRADE_HISTORY=Path(os.getenv("V95_TRADE_HISTORY_FILE",str(STATE.with_name("trade
 
 
 def send(message):
+    """Return True only when Telegram confirms successful delivery."""
     if not ALERTS:
-        return
+        return False
+
     token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
     chat=os.getenv("TELEGRAM_CHAT_ID","").strip()
+
     if not token or not chat:
-        LOG.warning("Telegram enabled but credentials missing; no alert sent")
-        return
+        LOG.warning("Telegram enabled but credentials missing")
+        return False
+
     payload=urlencode({"chat_id":chat,"text":message}).encode()
-    request=Request("https://api.telegram.org/bot"+token+"/sendMessage",
-                    data=payload,method="POST")
+    request=Request(
+        "https://api.telegram.org/bot"+token+"/sendMessage",
+        data=payload,
+        method="POST"
+    )
+
     try:
         with urlopen(request,timeout=15) as response:
             data=json.load(response)
-        if not data.get("ok"):
-            LOG.warning("Telegram API rejected notification")
+
+        if data.get("ok") is True:
+            return True
+
+        LOG.warning("Telegram API rejected notification")
+        return False
+
     except Exception as exc:
-        LOG.warning("Telegram notification failed: %s",type(exc).__name__)
+        LOG.warning(
+            "Telegram notification failed: %s",
+            type(exc).__name__
+        )
+        return False
+
+def retry_pending_alerts():
+    """Retry previously queued V9.5 research notifications."""
+    from v95_telegram_outbox import pending, mark_sent, mark_failed
+
+    if not ALERTS:
+        return
+
+    outbox = STATE.with_name("telegram_outbox.sqlite3")
+
+    committed = load()
+    committed_ids = set(committed.get("committed_alert_ids", []))
+
+    # Cleanup uses the persisted commitment record, never an assumed event.
+    from v95_telegram_outbox import cleanup
+    cleanup_result = cleanup(outbox, committed_ids)
+    if cleanup_result["cancelled_orphans"] or cleanup_result["removed_sent"]:
+        LOG.info(
+            "V9.5 outbox cleanup: %s orphan(s) cancelled, %s sent record(s) removed",
+            cleanup_result["cancelled_orphans"],
+            cleanup_result["removed_sent"],
+        )
+
+    # Keep every pending commitment and the latest 1000 historical IDs.
+    # Never discard an ID while its notification is awaiting delivery.
+    history = committed.get("committed_alert_ids", [])
+    if len(history) > 1000:
+        pending_ids = {
+            event_id for event_id, _, _ in pending(outbox, limit=100000)
+        }
+        retained = set(history[-1000:]) | pending_ids
+        pruned = [event_id for event_id in history if event_id in retained]
+        if len(pruned) < len(history):
+            committed["committed_alert_ids"] = pruned
+            save(committed)
+            committed_ids = set(pruned)
+
+    for event_id, message, attempts in pending(outbox, limit=100000):
+        if event_id not in committed_ids:
+            LOG.warning(
+                "V9.5 alert not verified against committed state; "
+                "delivery deferred"
+            )
+            continue
+
+        if send(message):
+            mark_sent(outbox, event_id)
+        else:
+            mark_failed(outbox, event_id, "Delivery not confirmed")
+
+
+def queue_research_alert(action, note, state):
+    """Persist a research notification before attempting delivery."""
+    from v95_telegram_outbox import enqueue
+
+    if not ALERTS:
+        return
+
+    event_bar = state.get("last_bar")
+    if not event_bar:
+        raise ValueError("Cannot queue alert without a candle timestamp")
+
+    pos = state.get("paper_position") or state.get("last_closed_position") or {}
+    position_id = pos.get("position_id")
+    if not position_id:
+        import hashlib
+        legacy_key = json.dumps(
+            {k: pos.get(k) for k in ("opened_at", "entry", "initial_stop", "target")},
+            sort_keys=True,
+        )
+        position_id = "legacy-" + hashlib.sha256(
+            legacy_key.encode("utf-8")
+        ).hexdigest()[:24]
+    event_id = "V95:" + position_id + ":" + action + ":" + event_bar
+    message = format_alert(action, note, state)
+
+    outbox = STATE.with_name("telegram_outbox.sqlite3")
+    enqueue(outbox, event_id, message)
 
 
 def load():
@@ -69,35 +164,11 @@ def save(state):
     tmp.replace(STATE)
 
 
+
 def candles():
-    if not KEY:
-        raise RuntimeError("Missing TWELVE_DATA_API_KEY")
-    query=urlencode({"symbol":"XAU/USD","interval":"1min","outputsize":1000,
-                     "timezone":"UTC","apikey":KEY,"format":"JSON"})
-    with urlopen("https://api.twelvedata.com/time_series?"+query,timeout=30) as r:
-        result=json.load(r)
-    if not isinstance(result.get("values"),list):
-        raise RuntimeError("Provider rejected XAU/USD M1 request")
-    now=dt.datetime.now(UTC)
-    rows=[]
-    for v in result["values"]:
-        t=dt.datetime.strptime(v["datetime"],"%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-        if t+dt.timedelta(minutes=1)>now-dt.timedelta(seconds=10):
-            continue
-        o,h,l,c=(float(v[k]) for k in ("open","high","low","close"))
-        if not all(math.isfinite(x) and x>0 for x in (o,h,l,c)) or not l<=min(o,c)<=max(o,c)<=h:
-            raise RuntimeError("Invalid OHLC")
-        rows.append({"t":t,"o":o,"h":h,"l":l,"c":c})
-    rows.sort(key=lambda x:x["t"])
-    if len(rows)<720 or len({x["t"] for x in rows})!=len(rows):
-        raise RuntimeError("Insufficient or duplicate M1 history")
-    if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
-        raise RuntimeError("Stale provider data; no signals")
-    # Do not fill missing candles. A market closure is a legitimate reason to wait.
-    tail=rows[-720:]
-    if any(b["t"]-a["t"]!=dt.timedelta(minutes=1) for a,b in zip(tail,tail[1:])):
-        raise RuntimeError("Gap in required M1 history; no signals")
-    return rows
+    """Read genuine completed Biquote M1 candles, tolerating historical gaps."""
+    from v95_resilient_biquote_reader import read_candles
+    return read_candles()
 
 
 def aggregate(rows,minutes):
@@ -130,24 +201,121 @@ def evaluate(rows,state,news_context=None):
     m15=aggregate(rows,15)
     h1=aggregate(rows,60)
     h4=aggregate(rows,240)
-    if len(m15)<18 or len(m5)<6 or len(h1)<3 or len(h4)<2:
-        return state,"WAIT_DATA","Insufficient completed aligned bars"
+    # Protect existing paper positions before applying new-entry requirements.
+    pos = state.get("paper_position")
+    if pos:
+        from v95_protective_gap_probe import check_protective_levels
+        # Track protective coverage independently of entry evaluations.
+        previous = state.get("last_protective_bar")
+        if not previous:
+            previous = pos.get("opened_at")
+
+        if not previous:
+            return state, "WAIT_DATA", "Missing paper-position opening timestamp"
+
+        try:
+            previous_time = dt.datetime.fromisoformat(previous)
+        except (TypeError, ValueError):
+            return state, "WAIT_DATA", "Invalid protective checkpoint timestamp"
+
+        protective_action, protective_detail = check_protective_levels(
+            pos, rows, previous_time
+        )
+
+        if protective_action == "NO_PROTECTIVE_TOUCH":
+            state["last_protective_bar"] = rows[-1]["t"].isoformat()
+        state["protective_gap_check"] = {
+            "action": protective_action,
+            "detail": protective_detail,
+        }
+        if protective_action in ("SL_TOUCHED", "TP_TOUCHED"):
+            fill = protective_detail["hypothetical_fill"]
+            entry = pos["entry"]
+            paper_pnl = (entry - fill) * pos.get("paper_units", 0.0)
+
+            today = rows[-1]["t"].date().isoformat()
+            if state.get("loss_day_utc") != today:
+                state["loss_day_utc"] = today
+                state["realized_paper_loss"] = 0.0
+
+            if paper_pnl < 0:
+                state["realized_paper_loss"] += -paper_pnl
+
+            state["last_closed_position"] = dict(
+                pos,
+                exit_action=protective_action,
+                hypothetical_fill=fill,
+                paper_pnl=paper_pnl,
+            )
+            state["paper_position"] = None
+            state["last_bar"] = rows[-1]["t"].isoformat()
+
+            note = (
+                f"paper entry={entry:.2f}, "
+                f"hypothetical fill={fill:.2f}, "
+                f"paper PnL={paper_pnl:.2f}"
+            )
+            return state, protective_action, note
+        if protective_action == "GAP_UNCERTAIN":
+            return state, "GAP_UNCERTAIN", str(protective_detail)
+        if protective_action == "WAIT_DATA":
+            return state, "WAIT_DATA", str(protective_detail)
+    from v95_gap_aware_gate import check as check_entry_data
+    eligible, data_reason, data_details = check_entry_data(rows, aggregate)
+    state["entry_data_gate"] = {
+        "eligible": eligible,
+        "reason": data_reason,
+        "details": data_details,
+    }
+    if not eligible and not state.get("paper_position"):
+        return state,"WAIT_DATA",data_reason
+    if not eligible and state.get("paper_position"):
+        state["entry_data_blocked"] = data_reason
+        state["last_bar"] = rows[-1]["t"].isoformat()
+        return state, "HOLD_SELL", (
+            "Existing paper SELL: protective M1 checks completed; "
+            "indicator-based exits deferred: " + data_reason
+        )
+    state.pop("entry_data_blocked", None)
     latest=rows[-1]
     last=latest["t"].isoformat()
     if state.get("last_bar")==last:
         return state,"UNCHANGED","No new completed M1 candle"
     state["last_bar"]=last
     price=latest["c"]
-    state["diagnostics"]=diagnostics(rows,m5,m15,h1,h4)
-    state["research_votes"]=votes(rows,m5,m15,h1,h4)
-    state["shadow_entry"]=entry_diagnostics(rows,m5,m15)
+    # Research diagnostics must never interrupt protective monitoring.
+    from v95_optional_h4_adapter import evaluate_optional_h4
+    try:
+        state["diagnostics"], state["research_votes"] = evaluate_optional_h4(
+            rows, m5, m15, h1, h4
+        )
+    except (ValueError, IndexError, KeyError, TypeError, ZeroDivisionError) as exc:
+        state["diagnostics"] = {"status": "UNAVAILABLE", "reason": str(exc)}
+        state["research_votes"] = {"status": "UNAVAILABLE", "reason": str(exc)}
+
+    try:
+        state["shadow_entry"] = entry_diagnostics(rows, m5, m15)
+    except (ValueError, IndexError, KeyError, TypeError, ZeroDivisionError) as exc:
+        state["shadow_entry"] = {"status": "UNAVAILABLE", "reason": str(exc)}
     sell_pressure=sum(max(x["o"]-x["c"],0) for x in rows[-10:])
     buy_pressure=sum(max(x["c"]-x["o"],0) for x in rows[-10:])
     total=buy_pressure+sell_pressure
     power=100*sell_pressure/total if total else 50
-    m15atr=atr(m15)
-    if m15atr is None or m15atr<=0:
-        return state,"WAIT_DATA","Invalid M15 ATR"
+    # ATR is mandatory for new entries and indicator-based position exits,
+    # but must not prevent protective M1 monitoring of an existing position.
+    m15atr=atr(m15) if len(m15)>=15 else None
+    atr_valid = (
+        m15atr is not None
+        and math.isfinite(m15atr)
+        and m15atr > 0
+    )
+    if not atr_valid and state.get("paper_position"):
+        return state, "HOLD_SELL", (
+            "Existing paper SELL: protective M1 checks completed; "
+            "indicator-based exits unavailable because M15 ATR is invalid"
+        )
+    if not atr_valid:
+        return state, "WAIT_DATA", "Invalid M15 ATR"
     today=latest["t"].date().isoformat()
     if state.get("loss_day_utc")!=today:
         state["loss_day_utc"]=today
@@ -208,7 +376,7 @@ def evaluate(rows,state,news_context=None):
     structural_sell=core_detectors.get("structural_sell",False)
     trend=h1[-1]["c"]<h1[-2]["c"]
     # H4 is advisory context only; it must never veto an otherwise valid SELL.
-    h4_bearish=h4[-1]["c"]<h4[-2]["c"]
+    h4_bearish=(h4[-1]["c"]<h4[-2]["c"]) if len(h4)>=2 else None
     m5_bearish=m5[-1]["c"]<m5[-2]["c"] and sum(
         m5[-i]["c"]<m5[-i-1]["c"] for i in range(1,5))>=3
     # Check remaining downside room against older support, not the breakout level.
@@ -248,7 +416,12 @@ def evaluate(rows,state,news_context=None):
         name for name in ("enhanced_support_break", "bearish_liquidity_sweep")
         if core_detectors.get(name,False)
     ]
-    state["paper_position"]={"entry":price,"initial_stop":stop,"current_stop":stop,
+    # A new paper position must never inherit the previous trade's cursor.
+    state["last_protective_bar"] = last
+    state.pop("protective_gap_check", None)
+    from uuid import uuid4
+    state["paper_position"]={"position_id":uuid4().hex,
+                              "entry":price,"initial_stop":stop,"current_stop":stop,
                               "target":target,"paper_units":units,"risk_budget":risk_budget,
                               "partial_proposed":False,
                               "partial_acknowledged":False,"opened_at":last,
@@ -263,7 +436,7 @@ def journal_decision(action,note,state):
     JOURNAL.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     row={"version":"V9.5_RESEARCH","observed_at_utc":dt.datetime.now(UTC).isoformat(),
          "m1_bar_start_utc":state.get("last_bar"),"decision":action,
-         "reason":note,"source":"TWELVE_DATA_XAUUSD_M1_PROXY",
+         "reason":note,"source":"BIQUOTE_XAUUSD_M1",
          "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
          "diagnostics":state.get("diagnostics",{}),
          "research_votes":state.get("research_votes",{}),
@@ -291,11 +464,29 @@ def market_session_open(now=None):
         return False
     if weekday == 6 and ny.hour < 17:
         return False
+    # Standard Monday–Thursday XAU/USD maintenance window.
+    if weekday in (0, 1, 2, 3) and ny.hour == 17:
+        return False
     return True
 
 
 def cycle():
+    # Retry queued research alerts independently of market data.
+    try:
+        retry_pending_alerts()
+    except Exception as exc:
+        LOG.warning(
+            "V9.5 pending alert retry failed: %s",
+            type(exc).__name__
+        )
     state=load()
+    # Migrate legacy paper positions without changing trading parameters.
+    pos = state.get("paper_position")
+    if pos and not pos.get("position_id"):
+        from uuid import uuid4
+        pos["position_id"] = uuid4().hex
+        save(state)
+        LOG.info("V9.5 legacy paper position assigned research ID")
     if not market_session_open():
         action="WAIT_MARKET_CLOSED"
         note="Indicative XAU/USD weekend closure; no paper entries or exits evaluated"
@@ -329,6 +520,28 @@ def cycle():
             updated["biquote_context"]=fetch_context()
         except Exception as exc:
             updated["biquote_context"]={"risk":"UNKNOWN","error_type":type(exc).__name__}
+    # Queue alerts before state persistence to prevent silent alert loss.
+    # Telegram delivery remains after the state has been saved.
+    if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
+                  "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
+        queue_research_alert(action,note,updated)
+    if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
+                  "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"} and ALERTS:
+        pos = updated.get("paper_position") or updated.get("last_closed_position") or {}
+        position_id = pos.get("position_id")
+        if not position_id:
+            import hashlib
+            legacy_key = json.dumps(
+                {k: pos.get(k) for k in ("opened_at", "entry", "initial_stop", "target")},
+                sort_keys=True,
+            )
+            position_id = "legacy-" + hashlib.sha256(
+                legacy_key.encode("utf-8")
+            ).hexdigest()[:24]
+        event_id = "V95:" + position_id + ":" + action + ":" + str(updated.get("last_bar"))
+        committed_ids = updated.setdefault("committed_alert_ids", [])
+        if event_id not in committed_ids:
+            committed_ids.append(event_id)
     journal_decision(action,note,updated)
     save(updated)
     try:
@@ -336,9 +549,7 @@ def cycle():
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         LOG.error("V9.5 trade history recording failed; retry on next cycle: %s", type(exc).__name__)
     LOG.info("%s %s",action,note)
-    if action in {"PAPER_SELL_ENTRY","SL_TOUCHED","TP_TOUCHED",
-                  "EXIT_SELL_NOW","PARTIAL_EXIT_PROPOSED","MOVE_SL"}:
-        send(format_alert(action,note,updated))
+    retry_pending_alerts()
     return action
 
 def main():

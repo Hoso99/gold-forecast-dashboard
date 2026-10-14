@@ -1,1 +1,24 @@
 .streamlit/secrets.toml
+
+# Local Python environments
+.venv/
+venv/
+env/
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+# Local runtime state and notification databases
+state.json
+decisions.jsonl
+trade_history.jsonl
+telegram_outbox.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+# Local backups
+*.bak
+*.bak_*
+*.pre-v95
