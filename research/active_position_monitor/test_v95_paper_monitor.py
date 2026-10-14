@@ -91,10 +91,11 @@ class PaperMonitorTests(unittest.TestCase):
         t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
         rows=[{"t":t+dt.timedelta(minutes=i),"o":91.,"h":92.,
                "l":89.,"c":90.} for i in range(720)]
-        m15=[{"h":100.,"l":80.,"c":95.} for _ in range(18)]
-        m5=[{"c":float(100-i)} for i in range(6)]
-        h1=[{"c":100.},{"c":99.},{"c":98.}]
-        h4=[{"c":100.},{"c":99.}]
+        m15=[{"t":t+dt.timedelta(minutes=15*i),"h":100.,"l":80.,"c":95.}
+             for i in range(18)]
+        m5=[{"t":t+dt.timedelta(minutes=5*i),"c":float(100-i)} for i in range(6)]
+        h1=[{"t":t+dt.timedelta(minutes=60*i),"c":100-i} for i in range(3)]
+        h4=[{"t":t+dt.timedelta(minutes=240*i),"c":100-i} for i in range(2)]
         state={"last_bar":None,"paper_position":existing_position,
                "realized_paper_loss":0.,"loss_day_utc":"2026-10-12"}
         bars={5:m5,15:m15,60:h1,240:h4}
