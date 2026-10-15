@@ -195,4 +195,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 research/feed_validation/v95_secondary_connection_probe.py
+          python3 -m venv "${{ runner.temp }}/v95-secondary-probe-venv"
+          "${{ runner.temp }}/v95-secondary-probe-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-secondary-probe-venv/bin/python" research/feed_validation/v95_secondary_connection_probe.py
