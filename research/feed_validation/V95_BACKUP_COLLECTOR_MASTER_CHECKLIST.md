@@ -43,11 +43,11 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [x] Confirm authentic incoming Biquote ticks and correct bid basis; record only safe counts/status, never payloads. 40/40 valid XAUUSD ticks (run 38707386525).
 
 ## Phase B — Independent M1 storage
-- [ ] Implement separate SQLite database schema under research-only directory owned by restricted account.
-- [ ] Validate candle provenance and strict first/last/gap/confirmation rules; reject partial first minute after connection/restart.
-- [ ] Implement idempotent writes, conflict detection, SQLite busy timeout and safe database initialization.
-- [ ] Test isolation: secondary writes never touch primary SQLite or primary service.
-- [ ] Verify real, independently captured M1 candle counts and timestamp continuity.
+- [x] Implement separate SQLite database schema and validate in a disposable isolated Oracle directory; permanent research directory setup remains pending.
+- [x] Validate candle provenance and strict first/last/gap/confirmation rules in bounded Oracle integration proof; first observed partial minute excluded.
+- [x] Implement idempotent writes, conflict detection, SQLite busy timeout and safe database initialization; offline tests passed.
+- [x] Test isolation: independent 95-second Oracle proof wrote only to disposable SQLite; primary_database_writes=false.
+- [x] Verify first real independently captured M1 candle: run 38708290021, 131 valid ticks, 1 validated M1 stored, 0 rejected; sustained timestamp continuity remains Phase C.
 
 ## Phase C — Reliability and recovery
 - [ ] Test primary interruption while independent connection stays up; use controlled simulation unless explicit permission to interrupt live primary.
@@ -68,7 +68,7 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [ ] Only mark BACKUP LIVE when service active AND fresh genuine validated candles confirmed.
 
 ## Current gate
-STOP before enabling a continuous service: Phase A short second-session connection verified (40 valid ticks, run 38707386525), but Phase B isolated persistence and long-running reconnection testing are not yet complete.
+STOP before enabling a continuous service: Phase A verified; Phase B bounded isolated SQLite proof verified (131 ticks, 1 M1, 0 rejected, run 38708290021). Persistent independent service, long-running continuity/reconnection testing and explicit deployment approval remain pending.
 
 ## Working procedure for every future step
 1. Read this checklist before changes.
