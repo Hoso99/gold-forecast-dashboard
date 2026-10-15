@@ -42,7 +42,19 @@ jobs:
       - name: Paper monitor offline safeguards
         run: python -m unittest discover -s research/active_position_monitor -p 'test_v95_*.py' -v
       - name: Syntax check
-        run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py research/active_position_monitor/v95_paper_monitor.py
+        run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py research/active_position_monitor/v95_paper_monitor.py research/feed_validation/v95_secondary_research_service.py research/feed_validation/v95_independent_candle_builder.py research/feed_validation/v95_independent_sqlite_store.py
+      - name: Validate proposed systemd unit isolation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          unit = Path('research/feed_validation/v95-secondary-research.service').read_text()
+          required = ('User=v95research', 'NoNewPrivileges=true', 'ProtectSystem=strict', 'ProtectHome=read-only', 'ReadWritePaths=/home/v95research/v95-backup-research', 'Restart=always', 'TimeoutStopSec=20')
+          for entry in required:
+              assert entry in unit, f'Missing systemd safety control: {entry}'
+          assert 'v95-biquote-collector.service' not in unit
+          assert 'v95-research-monitor.service' not in unit
+          print('SECONDARY_UNIT_STATIC_ISOLATION_OK')
+          PY
 
   oracle-read-only-inspection:
     # No checkout, no credentials, no network calls, no writes.
