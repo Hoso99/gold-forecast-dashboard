@@ -111,7 +111,7 @@ def simulate(trade, pair, candles, last_minute, max_minutes):
     }
     # Require contiguous M1 bars from 80 minutes before the entry through the
     # original exit, plus all M1 bars needed to establish M5 signal context.
-    warmup_min = (entry_sec // 300) * 5 // 60 - 80
+    warmup_min = (entry_sec // 300) * 5 - 80
     if any(m not in candles for m in range(warmup_min, last_observed_min + 1)):
         result["outcome"] = "EXCLUDED_MISSING_PRE_EXIT_CANDLES"
         return result
