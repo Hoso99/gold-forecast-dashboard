@@ -41,10 +41,16 @@ jobs:
               except (sqlite3.Error, OSError) as exc:
                   print("DATABASE_INSPECTION_FAILED: " + type(exc).__name__)
           PY
+      - name: Scan historical completed M5 candles (read-only)
+        shell: bash
+        run: |
+          python3 -B -m research.active_position_monitor.v95_m5_history_scan \
+            --db /home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3 \
+            --output v95_m5_history_summary.json
       - name: Upload research metadata
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: v95-m5-research-db-metadata
-          path: m5_research_db_metadata.txt
+          path: |\n            m5_research_db_metadata.txt\n            v95_m5_history_summary.json
           if-no-files-found: warn
