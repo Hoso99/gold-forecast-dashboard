@@ -7,6 +7,8 @@ on:
     paths:
       - 'research/feed_validation/v95_biquote_archive.py'
       - 'research/feed_validation/test_v95_biquote_archive.py'
+      - 'research/feed_validation/v95_outage_continuity_sim.py'
+      - 'research/feed_validation/test_v95_outage_continuity_sim.py'
       - '.github/workflows/v95-biquote-archive-tests.yml'
 
 permissions:
@@ -22,5 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run isolated archive tests
-        run: python -m unittest discover -s research/feed_validation -p 'test_v95_biquote_archive.py' -v
+      - name: Run isolated archive and outage-continuity tests
+        run: |
+          python -m unittest discover -s research/feed_validation -p 'test_v95_biquote_archive.py' -v
+          python -m unittest discover -s research/feed_validation -p 'test_v95_outage_continuity_sim.py' -v
