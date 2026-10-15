@@ -277,3 +277,45 @@ jobs:
           python3 -m venv "${{ runner.temp }}/v95-reconnect-proof-venv"
           "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
           "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" research/feed_validation/v95_secondary_reconnect_oracle_proof.py
+
+  oracle-secondary-approved-deployment:
+    # Explicit user approval received 2026-10-15; separate one-time PR label required.
+    # This job never modifies the primary services or trading databases.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-secondary-deploy-approved' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify Oracle preconditions and sudo scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = v95research
+          systemctl is-active --quiet v95-biquote-collector.service
+          systemctl is-active --quiet v95-research-monitor.service
+          test ! -e /etc/systemd/system/v95-secondary-research.service
+          test ! -e /home/v95research/v95-backup-research/biquote_independent_m1.sqlite3
+          sudo -n true || { echo 'NEEDS_UBUNTU_ADMIN_APPROVAL: runner has no passwordless sudo'; exit 12; }
+          echo "SECONDARY_DEPLOY_PRECONDITIONS_OK"
+      - name: Install and start approved isolated secondary service
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/research/feed_validation"
+          dest=/home/v95research/v95-secondary-research
+          dbdir=/home/v95research/v95-backup-research
+          install -d -m 700 "$dest" "$dbdir"
+          for name in v95_secondary_research_service.py v95_independent_candle_builder.py v95_independent_sqlite_store.py v95_secondary_connection_probe.py; do
+            install -m 600 "$src/$name" "$dest/$name"
+          done
+          python3 -m venv "$dest/.venv"
+          "$dest/.venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          sudo -n install -o root -g root -m 644 "$src/v95-secondary-research.service" /etc/systemd/system/v95-secondary-research.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now v95-secondary-research.service
+          systemctl is-active --quiet v95-secondary-research.service
+          systemctl is-active --quiet v95-biquote-collector.service
+          systemctl is-active --quiet v95-research-monitor.service
+          echo "SECONDARY_ONLY_SERVICE_STARTED"
