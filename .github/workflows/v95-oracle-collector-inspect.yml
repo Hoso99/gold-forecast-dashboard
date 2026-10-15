@@ -1,0 +1,48 @@
+name: V9.5 Oracle Collector Read-Only Inspection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-collector:
+    # Only the dedicated V9.5 research runner may execute this job.
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect collector AST without running or exposing code values
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path = Path("/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1_collector.py")
+          print("COLLECTOR_EXISTS", path.is_file())
+          if not path.is_file():
+              raise SystemExit("Collector path not readable; no modifications made")
+          tree = ast.parse(path.read_text(encoding="utf-8"))
+          print("COLLECTOR_TOP_LEVEL_FUNCTIONS")
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  print("FUNCTION", node.name, "PARAMETER_COUNT", len(node.args.args))
+          print("COLLECTOR_IMPORT_MODULES")
+          modules = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  modules.update(alias.name.split(".")[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  modules.add(node.module.split(".")[0])
+          for module in sorted(modules):
+              print("MODULE", module)
+          print("COLLECTOR_DATABASE_CALLS")
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Call):
+                  target = node.func
+                  if isinstance(target, ast.Attribute) and target.attr in ("connect", "websocket_connect", "create_connection"):
+                      print("CALL", target.attr, "LINE", node.lineno, "ARGUMENT_COUNT", len(node.args))
+          print("READ_ONLY_INSPECTION_COMPLETE")
+          PY

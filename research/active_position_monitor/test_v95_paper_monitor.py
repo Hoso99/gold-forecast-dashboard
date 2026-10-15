@@ -91,10 +91,12 @@ class PaperMonitorTests(unittest.TestCase):
         t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
         rows=[{"t":t+dt.timedelta(minutes=i),"o":91.,"h":92.,
                "l":89.,"c":90.} for i in range(720)]
-        m15=[{"h":100.,"l":80.,"c":95.} for _ in range(18)]
-        m5=[{"c":float(100-i)} for i in range(6)]
-        h1=[{"c":100.},{"c":99.},{"c":98.}]
-        h4=[{"c":100.},{"c":99.}]
+        m15=[{"t":t+dt.timedelta(minutes=15*i),"h":100.,"l":80.,"c":95.}
+             for i in range(30,48)]
+        m5=[{"t":t+dt.timedelta(minutes=5*i),"c":float(100-i)}
+            for i in range(138,144)]
+        h1=[{"t":t+dt.timedelta(minutes=60*i),"c":100-i} for i in range(9,12)]
+        h4=[{"t":t+dt.timedelta(minutes=240*i),"c":100-i} for i in range(2)]
         state={"last_bar":None,"paper_position":existing_position,
                "realized_paper_loss":0.,"loss_day_utc":"2026-10-12"}
         bars={5:m5,15:m15,60:h1,240:h4}
@@ -255,6 +257,51 @@ class PaperMonitorTests(unittest.TestCase):
                 with patch.object(mod,"urlopen",side_effect=RuntimeError("provider unavailable")):
                     with self.assertRaisesRegex(RuntimeError,"provider unavailable"):
                         mod.candles()
+
+
+    def test_expected_daily_market_closure_does_not_count_as_missing_candles(self):
+        a=dt.datetime(2026,10,12,20,59,tzinfo=dt.timezone.utc)  # 16:59 New York
+        b=dt.datetime(2026,10,12,22,0,tzinfo=dt.timezone.utc)   # 18:00 New York
+        bars=[{"t":a},{"t":b}]
+        self.assertTrue(mod._sequence_valid(bars,1))
+
+    def test_missing_open_session_m1_candle_is_rejected(self):
+        a=dt.datetime(2026,10,12,10,0,tzinfo=dt.timezone.utc)
+        b=dt.datetime(2026,10,12,10,2,tzinfo=dt.timezone.utc)
+        self.assertFalse(mod._sequence_valid([{"t":a},{"t":b}],1))
+
+    def test_old_gap_outside_sell_windows_does_not_block(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=20]
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertTrue(ok,reason)
+
+    def test_recent_m1_gap_blocks_sell_evaluation(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=715]
+        self.assertFalse(mod._sequence_valid(rows[-10:],1))
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertFalse(ok)
+        self.assertIn("gap",reason.lower())
+
+    def test_gap_inside_open_market_m15_window_is_rejected(self):
+        t=dt.datetime(2026,10,12,0,0,tzinfo=dt.timezone.utc)
+        rows=[{"t":t+dt.timedelta(minutes=i),"o":100.,"h":101.,
+               "l":99.,"c":100.} for i in range(720) if i!=650]
+        m5=mod.aggregate(rows,5)
+        m15=mod.aggregate(rows,15)
+        h1=mod.aggregate(rows,60)
+        ok,reason=mod._required_windows_valid(rows,m5,m15,h1)
+        self.assertFalse(ok)
+        self.assertIn("gap",reason.lower())
 
 
 if __name__=="__main__":

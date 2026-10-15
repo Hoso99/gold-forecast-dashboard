@@ -1,0 +1,321 @@
+name: V9.5 Recovery Research Tests
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+    paths:
+      - 'research/feed_validation/v95_candle_gap_audit.py'
+      - 'research/feed_validation/test_v95_candle_gap_audit.py'
+      - 'research/feed_validation/v95_recovery_dry_run.py'
+      - 'research/feed_validation/test_v95_recovery_dry_run.py'
+      - 'research/feed_validation/v95_gap_aware_gate.py'
+      - 'research/feed_validation/test_v95_gap_aware_gate.py'
+      - 'research/active_position_monitor/v95_paper_monitor.py'
+      - 'research/active_position_monitor/test_v95_paper_monitor.py'
+      - '.github/workflows/v95-recovery-research-tests.yml'
+      - 'research/feed_validation/v95_reconnect_timing_sim.py'
+      - 'research/feed_validation/test_v95_reconnect_timing_sim.py'
+      - 'research/feed_validation/v95_secondary_connection_probe.py'
+      - 'research/feed_validation/v95_independent_sqlite_store.py'
+      - 'research/feed_validation/test_v95_independent_sqlite_store.py'
+      - 'research/feed_validation/v95_independent_m1_oracle_proof.py'
+      - 'research/feed_validation/v95_phase_c_reliability_sim.py'
+      - 'research/feed_validation/test_v95_phase_c_reliability_sim.py'
+      - 'research/feed_validation/v95_independent_continuity_oracle_proof.py'
+      - 'research/feed_validation/v95_secondary_reconnect_oracle_proof.py'
+      - 'research/feed_validation/v95_secondary_research_service.py'
+      - 'research/feed_validation/test_v95_secondary_research_service.py'
+      - 'research/feed_validation/v95-secondary-research.service'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline gap and candidate tests
+        run: python -m unittest discover -s research/feed_validation -p 'test_v95_*.py' -v
+      - name: Paper monitor offline safeguards
+        run: python -m unittest discover -s research/active_position_monitor -p 'test_v95_*.py' -v
+      - name: Syntax check
+        run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py research/active_position_monitor/v95_paper_monitor.py research/feed_validation/v95_secondary_research_service.py research/feed_validation/v95_independent_candle_builder.py research/feed_validation/v95_independent_sqlite_store.py
+      - name: Validate proposed systemd unit isolation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          unit = Path('research/feed_validation/v95-secondary-research.service').read_text()
+          required = ('User=v95research', 'NoNewPrivileges=true', 'ProtectSystem=strict', 'ProtectHome=read-only', 'ReadWritePaths=/home/v95research/v95-backup-research', 'Restart=always', 'TimeoutStopSec=20')
+          for entry in required:
+              assert entry in unit, f'Missing systemd safety control: {entry}'
+          assert 'v95-biquote-collector.service' not in unit
+          assert 'v95-research-monitor.service' not in unit
+          print('SECONDARY_UNIT_STATIC_ISOLATION_OK')
+          PY
+
+  oracle-read-only-inspection:
+    # No checkout, no credentials, no network calls, no writes.
+    # Only the same-repository, named V9.5 research PR may schedule Oracle work.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - name: Read-only local Biquote collector metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path("/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1_collector.py")
+          print("COLLECTOR_EXISTS", path.is_file())
+          if not path.is_file():
+              print("COLLECTOR_UNREADABLE_FROM_RUNNER")
+              raise SystemExit(0)
+          tree = ast.parse(path.read_text(encoding="utf-8"))
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  print("FUNCTION", node.name, "PARAMETER_COUNT", len(node.args.args))
+          modules = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  modules.update(a.name.split(".")[0] for a in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  modules.add(node.module.split(".")[0])
+          for name in sorted(modules):
+              print("IMPORT_MODULE", name)
+          print("READ_ONLY_INSPECTION_COMPLETE")
+          print("RECOVERY_STRUCTURE_BEGIN")
+          for node in ast.walk(tree):
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  calls = []
+                  for sub in ast.walk(node):
+                      if isinstance(sub, ast.Call):
+                          func = sub.func
+                          if isinstance(func, ast.Name):
+                              name = func.id
+                          elif isinstance(func, ast.Attribute):
+                              name = func.attr
+                          else:
+                              continue
+                          if name in {"create_connection", "WebSocketApp", "run_forever", "recv", "send", "close", "sleep", "connect", "execute", "commit", "save_candle", "readiness", "collect", "connect_db", "settimeout"}:
+                              calls.append(name)
+                  handlers = []
+                  for sub in ast.walk(node):
+                      if isinstance(sub, ast.ExceptHandler):
+                          typ = sub.type
+                          if isinstance(typ, ast.Name):
+                              handlers.append(typ.id)
+                          elif isinstance(typ, ast.Tuple):
+                              handlers.append("MULTIPLE")
+                          elif typ is None:
+                              handlers.append("BARE")
+                          else:
+                              handlers.append("OTHER")
+                  counts = {kind: sum(isinstance(x, kind) for x in ast.walk(node)) for kind in (ast.While, ast.For, ast.Try, ast.If, ast.With)}
+                  print("FUNCTION_RECOVERY", node.name, "CALLS", ",".join(sorted(set(calls))), "EXCEPT", ",".join(handlers), "WHILE", counts[ast.While], "FOR", counts[ast.For], "TRY", counts[ast.Try], "IF", counts[ast.If], "WITH", counts[ast.With])
+          print("RECOVERY_STRUCTURE_END")
+          # Describe protocol syntax without printing any source constants, credentials or payload values.
+          for fn in tree.body:
+              if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name != "collect":
+                  continue
+              for node in ast.walk(fn):
+                  if isinstance(node, ast.Call):
+                      target = node.func
+                      callname = target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute) else "unknown"
+                      if callname in {"create_connection", "send", "recv", "json", "loads", "get", "split", "sleep", "save_candle", "readiness"}:
+                          args = [type(a).__name__ for a in node.args]
+                          print("PROTOCOL_CALL", callname, "ARG_TYPES", ",".join(args), "LINE", node.lineno)
+                  elif isinstance(node, ast.Subscript):
+                      if isinstance(node.value, ast.Name):
+                          print("PROTOCOL_SUBSCRIPT", node.value.id, "KEY_TYPE", type(node.slice).__name__, "LINE", node.lineno)
+                  elif isinstance(node, ast.Compare):
+                      print("PROTOCOL_COMPARE", ",".join(type(op).__name__ for op in node.ops), "LINE", node.lineno)
+          print("PROTOCOL_SHAPE_COMPLETE")
+          # Extract only literal-free syntax from collector lines 90-160 to
+          # identify SignalR message assembly and tick schema safely.
+          import copy
+          class Redact(ast.NodeTransformer):
+              def visit_Constant(self, n):
+                  if isinstance(n.value, str):
+                      return ast.copy_location(ast.Constant(value="<string>"), n)
+                  if isinstance(n.value, (int, float)):
+                      return ast.copy_location(ast.Constant(value=0), n)
+                  return n
+          lines = path.read_text(encoding="utf-8").splitlines()
+          selected = []
+          for n in tree.body:
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "collect":
+                  for statement in n.body:
+                      if 90 <= statement.lineno <= 160:
+                          sanitized = Redact().visit(copy.deepcopy(statement))
+                          selected.append(ast.unparse(sanitized))
+          for part in selected:
+              for line in part.splitlines()[:70]:
+                  print("REDACTED_AST", line[:180])
+          print("REDACTED_PROTOCOL_INSPECTION_COMPLETE")
+          # Public protocol field names only; no literal payloads, endpoints or tokens.
+          public_fields = {"type", "target", "arguments", "invocationId", "protocol",
+                           "version", "M", "A", "R", "H", "P", "bid", "ask",
+                           "Bid", "Ask", "symbol", "Symbol", "timestamp",
+                           "Timestamp", "time", "Time", "date", "Date",
+                           "s", "b", "a", "t", "type", "data"}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Dict):
+                  fields = [k.value for k in node.keys if isinstance(k, ast.Constant)
+                            and isinstance(k.value, str) and k.value in public_fields]
+                  if fields:
+                      print("PUBLIC_PROTOCOL_FIELDS", ",".join(fields), "LINE", node.lineno)
+              if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+                  key = node.slice.value
+                  if isinstance(key, str) and key in public_fields:
+                      print("PUBLIC_SUBSCRIPT_FIELD", key, "LINE", node.lineno)
+          print("PUBLIC_PROTOCOL_FIELD_INSPECTION_COMPLETE")
+          # Emit only bounded public SignalR protocol identifiers, not endpoints,
+          # credentials, raw messages, symbols, or other arbitrary string literals.
+          safe_identifiers = {"json", "messagepack", "Subscribe", "SubscribeToSymbol",
+                              "SubscribeSymbol", "ReceiveTick", "ReceiveQuote",
+                              "tick", "Tick", "XAUUSD", "XAU/USD", "1"}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  if node.value in safe_identifiers:
+                      print("KNOWN_PROTOCOL_IDENTIFIER", node.value, "LINE", node.lineno)
+          print("KNOWN_PROTOCOL_IDENTIFIER_INSPECTION_COMPLETE")
+          PY
+
+  oracle-isolated-builder-smoke:
+    needs: oracle-read-only-inspection
+    # Research-only checkout in runner workspace; no systemd or live DB access.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - name: Checkout approved research branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate isolated candle builder on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/feed_validation -p 'test_v95_independent_candle_builder.py' -v
+          python3 -m unittest discover -s research/feed_validation -p 'test_v95_reconnect_timing_sim.py' -v
+          python3 -m py_compile research/feed_validation/v95_independent_candle_builder.py
+          echo ORACLE_RESEARCH_BUILDER_SMOKE_OK
+
+  oracle-secondary-session-probe:
+    needs: oracle-isolated-builder-smoke
+    # Single 20-second second-session probe; no persistence or service changes.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe independent XAUUSD Biquote session without database writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-secondary-probe-venv"
+          "${{ runner.temp }}/v95-secondary-probe-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-secondary-probe-venv/bin/python" research/feed_validation/v95_secondary_connection_probe.py
+
+  oracle-independent-m1-storage-proof:
+    needs: oracle-secondary-session-probe
+    # Bounded integration proof only: second session, throwaway SQLite, no service.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Genuine M1 to throwaway SQLite proof (95 seconds)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-independent-m1-proof-venv"
+          "${{ runner.temp }}/v95-independent-m1-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-independent-m1-proof-venv/bin/python" research/feed_validation/v95_independent_m1_oracle_proof.py
+
+  oracle-independent-four-minute-continuity:
+    needs: oracle-independent-m1-storage-proof
+    # Temporary independent session and SQLite; no systemd or primary DB changes.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate four-minute independent Biquote candle continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-continuity-proof-venv"
+          "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" research/feed_validation/v95_independent_continuity_oracle_proof.py
+
+  oracle-secondary-controlled-reconnect:
+    needs: oracle-independent-four-minute-continuity
+    # Disconnect only the short-lived secondary research socket; never primary.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Controlled secondary-only Biquote disconnect and recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-reconnect-proof-venv"
+          "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" research/feed_validation/v95_secondary_reconnect_oracle_proof.py
+
+  oracle-secondary-approved-deployment:
+    # Explicit user approval received 2026-10-15; separate one-time PR label required.
+    # This job never modifies the primary services or trading databases.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-secondary-deploy-approved' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify Oracle preconditions and sudo scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = v95research
+          systemctl is-active --quiet v95-biquote-collector.service
+          systemctl is-active --quiet v95-research-monitor.service
+          test ! -e /etc/systemd/system/v95-secondary-research.service
+          test ! -e /home/v95research/v95-backup-research/biquote_independent_m1.sqlite3
+          sudo -n true || { echo 'NEEDS_UBUNTU_ADMIN_APPROVAL: runner has no passwordless sudo'; exit 12; }
+          echo "SECONDARY_DEPLOY_PRECONDITIONS_OK"
+      - name: Install and start approved isolated secondary service
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/research/feed_validation"
+          dest=/home/v95research/v95-secondary-research
+          dbdir=/home/v95research/v95-backup-research
+          install -d -m 700 "$dest" "$dbdir"
+          for name in v95_secondary_research_service.py v95_independent_candle_builder.py v95_independent_sqlite_store.py v95_secondary_connection_probe.py; do
+            install -m 600 "$src/$name" "$dest/$name"
+          done
+          python3 -m venv "$dest/.venv"
+          "$dest/.venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          sudo -n install -o root -g root -m 644 "$src/v95-secondary-research.service" /etc/systemd/system/v95-secondary-research.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now v95-secondary-research.service
+          systemctl is-active --quiet v95-secondary-research.service
+          systemctl is-active --quiet v95-biquote-collector.service
+          systemctl is-active --quiet v95-research-monitor.service
+          echo "SECONDARY_ONLY_SERVICE_STARTED"

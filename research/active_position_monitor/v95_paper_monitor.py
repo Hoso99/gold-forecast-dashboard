@@ -134,6 +134,54 @@ def _save_candle_cache(rows):
     tmp.replace(CANDLE_CACHE)
 
 
+def _market_minute_open(moment):
+    """Return whether a UTC minute belongs to the usual XAU/USD trading session."""
+    ny=moment.astimezone(ZoneInfo("America/New_York"))
+    weekday=ny.weekday()
+    if weekday==5 or (weekday==4 and ny.hour>=17) or (weekday==6 and ny.hour<17):
+        return False
+    if weekday<4 and ny.hour==17:
+        return False
+    return True
+
+
+def _sequence_valid(bars, minutes):
+    """Validate intervals, allowing only known market-closure gaps, never data gaps."""
+    for a,b in zip(bars,bars[1:]):
+        expected=a["t"]+dt.timedelta(minutes=minutes)
+        if b["t"]<expected:
+            return False
+        cursor=expected
+        while cursor<b["t"]:
+            if _market_minute_open(cursor):
+                return False
+            cursor+=dt.timedelta(minutes=1)
+    return True
+
+
+def _required_windows_valid(rows, m5, m15, h1):
+    """Require clean SELL-pressure and indicator windows before evaluating a signal."""
+    if len(rows)<10 or not _sequence_valid(rows[-10:],1):
+        return False,"WAIT_DATA: gap in last 10 M1 SELL-pressure candles"
+    requirements=((m5,6,5,"M5"),(m15,18,15,"M15"),(h1,3,60,"H1"))
+    latest_m1=rows[-1]["t"]
+    for bars,needed,minutes,label in requirements:
+        if len(bars)<needed:
+            return False,f"WAIT_DATA: insufficient completed {label} bars"
+        tail=bars[-needed:]
+        if not _sequence_valid(tail,minutes):
+            return False,f"WAIT_DATA: gap in required {label} indicator window"
+        # Do not let aggregation silently skip a missing newest timeframe bar
+        # and then evaluate a stale, older indicator window.
+        midnight=latest_m1.replace(hour=0,minute=0,second=0,microsecond=0)
+        minute_of_day=latest_m1.hour*60+latest_m1.minute
+        bucket_start=midnight+dt.timedelta(minutes=(minute_of_day//minutes)*minutes)
+        if latest_m1 < bucket_start+dt.timedelta(minutes=minutes-1):
+            bucket_start-=dt.timedelta(minutes=minutes)
+        if tail[-1]["t"] != bucket_start:
+            return False,f"WAIT_DATA: latest required {label} bar missing or incomplete"
+    return True,"READY: required SELL signal windows verified"
+
 def candles():
     if not KEY:
         raise RuntimeError("Missing TWELVE_DATA_API_KEY")
@@ -176,9 +224,9 @@ def candles():
         raise RuntimeError("Insufficient M1 history")
     if (now-(rows[-1]["t"]+dt.timedelta(minutes=1))).total_seconds()>180:
         raise RuntimeError("Stale provider data; no signals")
-    tail=rows[-720:]
-    if any(b["t"]-a["t"]!=dt.timedelta(minutes=1) for a,b in zip(tail,tail[1:])):
-        raise RuntimeError("Gap in required M1 history; no signals")
+    # Do not let an old gap anywhere in the 720-bar context suppress a SELL.
+    # evaluate() validates the exact M1/M5/M15/H1 windows used by the entry rules.
+    # A gap inside one of those required windows still fails closed as WAIT_DATA.
     _save_candle_cache(rows)
     return rows
 
@@ -213,6 +261,9 @@ def evaluate(rows,state,news_context=None):
     m15=aggregate(rows,15)
     h1=aggregate(rows,60)
     h4=aggregate(rows,240)
+    windows_ok,windows_note=_required_windows_valid(rows,m5,m15,h1)
+    if not windows_ok:
+        return state,"WAIT_DATA",windows_note
     if len(m15)<18 or len(m5)<6 or len(h1)<3 or len(h4)<2:
         return state,"WAIT_DATA","Insufficient completed aligned bars"
     latest=rows[-1]
