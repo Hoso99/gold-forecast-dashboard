@@ -19,6 +19,7 @@ on:
       - 'research/feed_validation/v95_independent_m1_oracle_proof.py'
       - 'research/feed_validation/v95_phase_c_reliability_sim.py'
       - 'research/feed_validation/test_v95_phase_c_reliability_sim.py'
+      - 'research/feed_validation/v95_independent_continuity_oracle_proof.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -220,3 +221,20 @@ jobs:
           python3 -m venv "${{ runner.temp }}/v95-independent-m1-proof-venv"
           "${{ runner.temp }}/v95-independent-m1-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
           "${{ runner.temp }}/v95-independent-m1-proof-venv/bin/python" research/feed_validation/v95_independent_m1_oracle_proof.py
+
+  oracle-independent-four-minute-continuity:
+    # Temporary independent session and SQLite; no systemd or primary DB changes.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate four-minute independent Biquote candle continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-continuity-proof-venv"
+          "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" research/feed_validation/v95_independent_continuity_oracle_proof.py
