@@ -1,0 +1,42 @@
+name: V9.5 Hybrid A vs B Offline Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-m5-exit-challenger-20261015
+          persist-credentials: false
+      - name: Compare Hybrid A and B using accessible private M1 history
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from research.active_position_monitor.v95_mtf_exit_study import load
+          from research.active_position_monitor.v95_m5_m1_episode_study import analyze
+          datasets = {
+              "Biquote baseline": Path("/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3"),
+              "Twelve Data backfill": Path.home()/".local/share/v95-1000-signal-backfill/historical_m1.sqlite3",
+          }
+          for label, path in datasets.items():
+              if not path.is_file():
+                  print(json.dumps({"dataset":label,"status":"NOT_ACCESSIBLE","no_permissions_changed":True}))
+                  continue
+              try:
+                  report=analyze(load(path))
+                  keys=("candidate_episodes","confirmed_episodes","unconfirmed_episodes","incomplete_confirmation_windows","confirmation_delay_counts","confirmation_price_move_bps","all_anchor_forward_bps","confirmed_anchor_forward_bps","unconfirmed_anchor_forward_bps","confirmed_after_confirmation_forward_bps")
+                  print(json.dumps({"dataset":label,"hybrid_A":"M5 exit candidate at anchor","hybrid_B":"bullish completed M1 confirmation within 3 minutes",**{k:report[k] for k in keys}},sort_keys=True))
+              except (PermissionError, OSError, ValueError) as e:
+                  print(json.dumps({"dataset":label,"status":"UNAVAILABLE_OR_INVALID","error_type":type(e).__name__}))
+          print("Earlier six Twelve Data baseline episodes require separate permission-preserving offline analysis; do not claim full 34-episode outcome comparison.")
+          print("These are candle-based proxies, not executable trade fills, P&L, or R.")
+          PY
