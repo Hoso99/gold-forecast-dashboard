@@ -62,4 +62,34 @@ jobs:
           for name in sorted(modules):
               print("IMPORT_MODULE", name)
           print("READ_ONLY_INSPECTION_COMPLETE")
+          print("RECOVERY_STRUCTURE_BEGIN")
+          for node in ast.walk(tree):
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  calls = []
+                  for sub in ast.walk(node):
+                      if isinstance(sub, ast.Call):
+                          func = sub.func
+                          if isinstance(func, ast.Name):
+                              name = func.id
+                          elif isinstance(func, ast.Attribute):
+                              name = func.attr
+                          else:
+                              continue
+                          if name in {"create_connection", "WebSocketApp", "run_forever", "recv", "send", "close", "sleep", "connect", "execute", "commit", "save_candle", "readiness", "collect", "connect_db", "settimeout"}:
+                              calls.append(name)
+                  handlers = []
+                  for sub in ast.walk(node):
+                      if isinstance(sub, ast.ExceptHandler):
+                          typ = sub.type
+                          if isinstance(typ, ast.Name):
+                              handlers.append(typ.id)
+                          elif isinstance(typ, ast.Tuple):
+                              handlers.append("MULTIPLE")
+                          elif typ is None:
+                              handlers.append("BARE")
+                          else:
+                              handlers.append("OTHER")
+                  counts = {kind: sum(isinstance(x, kind) for x in ast.walk(node)) for kind in (ast.While, ast.For, ast.Try, ast.If, ast.With)}
+                  print("FUNCTION_RECOVERY", node.name, "CALLS", ",".join(sorted(set(calls))), "EXCEPT", ",".join(handlers), "WHILE", counts[ast.While], "FOR", counts[ast.For], "TRY", counts[ast.Try], "IF", counts[ast.If], "WITH", counts[ast.With])
+          print("RECOVERY_STRUCTURE_END")
           PY
