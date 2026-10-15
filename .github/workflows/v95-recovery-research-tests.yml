@@ -48,9 +48,6 @@ jobs:
     # No checkout, no credentials, no network calls, no writes.
     # Only the same-repository, named V9.5 research PR may schedule Oracle work.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 3
     steps:
@@ -178,11 +175,9 @@ jobs:
           PY
 
   oracle-isolated-builder-smoke:
+    needs: oracle-read-only-inspection
     # Research-only checkout in runner workspace; no systemd or live DB access.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 3
     steps:
@@ -200,11 +195,9 @@ jobs:
           echo ORACLE_RESEARCH_BUILDER_SMOKE_OK
 
   oracle-secondary-session-probe:
+    needs: oracle-isolated-builder-smoke
     # Single 20-second second-session probe; no persistence or service changes.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 2
     steps:
@@ -220,11 +213,9 @@ jobs:
           "${{ runner.temp }}/v95-secondary-probe-venv/bin/python" research/feed_validation/v95_secondary_connection_probe.py
 
   oracle-independent-m1-storage-proof:
+    needs: oracle-secondary-session-probe
     # Bounded integration proof only: second session, throwaway SQLite, no service.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 3
     steps:
@@ -240,11 +231,9 @@ jobs:
           "${{ runner.temp }}/v95-independent-m1-proof-venv/bin/python" research/feed_validation/v95_independent_m1_oracle_proof.py
 
   oracle-independent-four-minute-continuity:
+    needs: oracle-independent-m1-storage-proof
     # Temporary independent session and SQLite; no systemd or primary DB changes.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 7
     steps:
@@ -260,11 +249,9 @@ jobs:
           "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" research/feed_validation/v95_independent_continuity_oracle_proof.py
 
   oracle-secondary-controlled-reconnect:
+    needs: oracle-independent-four-minute-continuity
     # Disconnect only the short-lived secondary research socket; never primary.
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'v95-oracle-manual' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
-    concurrency:
-      group: v95-oracle-manual-single-runner
-      cancel-in-progress: false
     runs-on: [self-hosted, Linux, X64, v95-research-only]
     timeout-minutes: 6
     steps:
