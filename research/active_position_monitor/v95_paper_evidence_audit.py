@@ -15,7 +15,15 @@ def audit():
     }
     report={}
     for name,path in paths.items():
-        item={"exists":path.is_file(),"readable":os.access(path,os.R_OK),"records":None,"field_names":[]}
+        try:
+            exists = path.is_file()
+            readable = exists and os.access(path, os.R_OK)
+        except (OSError, PermissionError):
+            exists = None
+            readable = False
+        item={"exists":exists,"readable":readable,"records":None,"field_names":[]}
+        if exists is None:
+            item["inspection"]="ACCESS_DENIED"
         if item["exists"] and item["readable"]:
             try:
                 if path.suffix==".jsonl":
