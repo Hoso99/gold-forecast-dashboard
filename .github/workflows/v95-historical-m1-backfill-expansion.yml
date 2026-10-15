@@ -1,0 +1,22 @@
+name: V9.5 Historical M1 Backfill Expansion
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-historical-backfill-pilot
+  cancel-in-progress: false
+jobs:
+  expand:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-m5-exit-challenger-20261015
+          persist-credentials: false
+      - name: Expand private historical M1 and count research episodes
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 research/active_position_monitor/v95_historical_m1_backfill_expansion.py
