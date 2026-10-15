@@ -4,7 +4,6 @@ Uses a second WebSocket session and a throwaway isolated SQLite file.
 No live DB writes, no systemd installation, no price/tick payload logging.
 """
 import json
-import os
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -22,6 +21,7 @@ def run(seconds=95):
                     database_rows=0, primary_database_writes=False)
     with tempfile.TemporaryDirectory(prefix="v95-independent-proof-") as root:
         database = Path(root) / "isolated_independent_m1.sqlite3"
+        validated_minutes = []
         ws = websocket.create_connection(URL, timeout=4, origin="https://biquote.io")
         counters["connected"] = True
         try:
@@ -85,6 +85,7 @@ def run(seconds=95):
                             if candle:
                                 persist_validated_candle(database, candle)
                                 counters["complete_m1_candles"] += 1
+                                validated_minutes.append(current)
                             else:
                                 counters["rejected_m1"] += 1
                         current = minute
@@ -95,6 +96,13 @@ def run(seconds=95):
                 import sqlite3
                 with sqlite3.connect(database) as conn:
                     counters["database_rows"] = conn.execute("SELECT COUNT(*) FROM independent_m1").fetchone()[0]
+            counters["validated_m1_gaps"] = sum(
+                int((b - a).total_seconds() // 60) - 1
+                for a, b in zip(validated_minutes, validated_minutes[1:])
+            )
+            counters["database_row_count_matches"] = (
+                counters["database_rows"] == counters["complete_m1_candles"]
+            )
         finally:
             ws.close()
     print(json.dumps(counters, sort_keys=True))
