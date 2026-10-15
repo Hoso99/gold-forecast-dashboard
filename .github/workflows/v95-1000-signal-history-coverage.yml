@@ -10,6 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: research/v95-m5-exit-challenger-20261015
           persist-credentials: false
       - name: Validate accessible M1 history and count independent reversal episodes
         shell: bash
