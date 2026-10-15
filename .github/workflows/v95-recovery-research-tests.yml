@@ -29,3 +29,37 @@ jobs:
         run: python -m unittest discover -s research/active_position_monitor -p 'test_v95_*.py' -v
       - name: Syntax check
         run: python -m py_compile research/feed_validation/v95_candle_gap_audit.py research/feed_validation/v95_recovery_dry_run.py research/feed_validation/v95_gap_aware_gate.py research/active_position_monitor/v95_paper_monitor.py
+
+  oracle-read-only-inspection:
+    # No checkout, no credentials, no network calls, no writes.
+    # Only the same-repository, named V9.5 research PR may schedule Oracle work.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - name: Read-only local Biquote collector metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path("/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1_collector.py")
+          print("COLLECTOR_EXISTS", path.is_file())
+          if not path.is_file():
+              print("COLLECTOR_UNREADABLE_FROM_RUNNER")
+              raise SystemExit(0)
+          tree = ast.parse(path.read_text(encoding="utf-8"))
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  print("FUNCTION", node.name, "PARAMETER_COUNT", len(node.args.args))
+          modules = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  modules.update(a.name.split(".")[0] for a in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  modules.add(node.module.split(".")[0])
+          for name in sorted(modules):
+              print("IMPORT_MODULE", name)
+          print("READ_ONLY_INSPECTION_COMPLETE")
+          PY
