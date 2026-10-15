@@ -95,3 +95,22 @@ jobs:
                   print("FUNCTION_RECOVERY", node.name, "CALLS", ",".join(sorted(set(calls))), "EXCEPT", ",".join(handlers), "WHILE", counts[ast.While], "FOR", counts[ast.For], "TRY", counts[ast.Try], "IF", counts[ast.If], "WITH", counts[ast.With])
           print("RECOVERY_STRUCTURE_END")
           PY
+
+  oracle-isolated-builder-smoke:
+    # Research-only checkout in runner workspace; no systemd or live DB access.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 3
+    steps:
+      - name: Checkout approved research branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate isolated candle builder on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/feed_validation -p 'test_v95_independent_candle_builder.py' -v
+          python3 -m unittest discover -s research/feed_validation -p 'test_v95_reconnect_timing_sim.py' -v
+          python3 -m py_compile research/feed_validation/v95_independent_candle_builder.py
+          echo ORACLE_RESEARCH_BUILDER_SMOKE_OK
