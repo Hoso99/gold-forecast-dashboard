@@ -71,7 +71,7 @@ def persist_validated_candle(path, candle):
                 raise ValueError("Conflicting independently observed candle")
             return "duplicate"
         db.execute(
-            "INSERT INTO independent_m1 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO independent_m1 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (minute, o, h, l, c, ticks, "biquote_independent_bid",
              datetime.now(timezone.utc).isoformat()),
         )
