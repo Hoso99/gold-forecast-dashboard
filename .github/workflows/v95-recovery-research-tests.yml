@@ -94,6 +94,23 @@ jobs:
                   counts = {kind: sum(isinstance(x, kind) for x in ast.walk(node)) for kind in (ast.While, ast.For, ast.Try, ast.If, ast.With)}
                   print("FUNCTION_RECOVERY", node.name, "CALLS", ",".join(sorted(set(calls))), "EXCEPT", ",".join(handlers), "WHILE", counts[ast.While], "FOR", counts[ast.For], "TRY", counts[ast.Try], "IF", counts[ast.If], "WITH", counts[ast.With])
           print("RECOVERY_STRUCTURE_END")
+          # Describe protocol syntax without printing any source constants, credentials or payload values.
+          for fn in tree.body:
+              if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name != "collect":
+                  continue
+              for node in ast.walk(fn):
+                  if isinstance(node, ast.Call):
+                      target = node.func
+                      callname = target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute) else "unknown"
+                      if callname in {"create_connection", "send", "recv", "json", "loads", "get", "split", "sleep", "save_candle", "readiness"}:
+                          args = [type(a).__name__ for a in node.args]
+                          print("PROTOCOL_CALL", callname, "ARG_TYPES", ",".join(args), "LINE", node.lineno)
+                  elif isinstance(node, ast.Subscript):
+                      if isinstance(node.value, ast.Name):
+                          print("PROTOCOL_SUBSCRIPT", node.value.id, "KEY_TYPE", type(node.slice).__name__, "LINE", node.lineno)
+                  elif isinstance(node, ast.Compare):
+                      print("PROTOCOL_COMPARE", ",".join(type(op).__name__ for op in node.ops), "LINE", node.lineno)
+          print("PROTOCOL_SHAPE_COMPLETE")
           PY
 
   oracle-isolated-builder-smoke:
