@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify isolated research tests
-        run: python3 -B -m unittest discover -s research/tests -p test_v95_m5_exit_challenger.py -v
+        run: python3 -B -m unittest discover -s research/tests -p 'test_v95_m5_exit*.py' -v
       - name: Inspect Biquote database metadata (read-only)
         shell: bash
         run: |
@@ -28,7 +28,7 @@ jobs:
               print("DATABASE_NOT_ACCESSIBLE")
           else:
               try:
-                  con = sqlite3.connect("file:" + path + "?mode=ro&immutable=1", uri=True)
+                  con = sqlite3.connect("file:" + path + "?mode=ro", uri=True)
                   try:
                       print("DATABASE_READABLE")
                       for (table,) in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
