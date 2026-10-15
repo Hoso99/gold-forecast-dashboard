@@ -19,11 +19,11 @@ jobs:
               "TwelveDataResearch": "/home/ubuntu/v95-private-export/twelvedata_hybrid_research.sqlite3",
           }
           for label, path in sources.items():
-              p = Path(path)
-              if not p.is_file():
-                  print(f"{label}: NOT_ACCESSIBLE")
-                  continue
               try:
+                  p = Path(path)
+                  if not p.is_file():
+                      print(f"{label}: NOT_ACCESSIBLE")
+                      continue
                   with sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True) as db:
                       tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
                       if "candles" not in tables:
