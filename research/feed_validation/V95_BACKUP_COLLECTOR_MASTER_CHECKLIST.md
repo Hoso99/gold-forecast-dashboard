@@ -53,9 +53,9 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [ ] Test primary interruption while independent connection stays up; use controlled simulation unless explicit permission to interrupt live primary.
 - [ ] Test independent connection interruption and recovery, including mid-minute invalidation.
 - [ ] Test shared outage: no fabricated or recovered candles.
-- [ ] Compare coverage across both databases without changing SELL signal inputs.
+- [ ] Compare coverage across both databases without changing SELL signal inputs. Initial independent 4-minute continuity proof passed: 3 validated M1, 0 gaps, 367 ticks (run 38711174846), but primary/secondary DB comparison remains pending.
 - [ ] Evaluate the three October 14 slots hypothetically only; do not claim actual historical recovery.
-- [ ] Document measured reconnect delays, missing-minute rates and coverage limitations.
+- [ ] Document measured reconnect delays, missing-minute rates and coverage limitations. Baseline 4-minute uninterrupted Oracle test: 367 valid ticks, 3 stored validated M1, 0 rejected, 0 accepted-candle gaps, SQLite row count matched (run 38711174846). Actual reconnect delay not yet measured.
 
 ## Phase D — Controlled Oracle deployment
 - [ ] Seek explicit approval for enabling the independent always-on service.
@@ -68,7 +68,7 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [ ] Only mark BACKUP LIVE when service active AND fresh genuine validated candles confirmed.
 
 ## Current gate
-STOP before enabling a continuous service: Phase A verified; Phase B bounded isolated SQLite proof verified (131 ticks, 1 M1, 0 rejected, run 38708290021). Persistent independent service, long-running continuity/reconnection testing and explicit deployment approval remain pending.
+STOP before enabling a continuous service: Phase A verified; Phase B bounded isolated SQLite proof verified (131 ticks, 1 M1, 0 rejected, run 38708290021). Persistent independent service, real-disconnect reconnection testing, longer-duration monitoring and explicit deployment approval remain pending. A bounded 245-second Oracle test passed with 3 continuous M1 candles (run 38711174846).
 
 ## Working procedure for every future step
 1. Read this checklist before changes.
