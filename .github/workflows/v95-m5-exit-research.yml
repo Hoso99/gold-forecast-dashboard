@@ -47,6 +47,8 @@ jobs:
           python3 -B -m research.active_position_monitor.v95_m5_history_scan \
             --db /home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3 \
             --output v95_m5_history_summary.json
+      - name: Audit historical paper-trade evidence availability (read-only)
+        run: python3 -B -m research.active_position_monitor.v95_paper_evidence_audit
       - name: Upload research metadata
         if: always()
         uses: actions/upload-artifact@v4
