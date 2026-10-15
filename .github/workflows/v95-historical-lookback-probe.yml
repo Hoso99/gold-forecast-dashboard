@@ -1,0 +1,38 @@
+name: V9.5 Historical M1 Provider Lookback Probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - name: Probe Twelve Data historical availability (read-only API request)
+        shell: bash
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 - <<'PY'
+          import datetime as dt, json, os
+          from urllib.parse import urlencode
+          from urllib.request import urlopen
+          key=os.environ.get("TWELVE_DATA_API_KEY","").strip()
+          if not key:
+              print("NO_API_KEY: no historical API request made")
+              raise SystemExit(0)
+          now=dt.datetime.now(dt.timezone.utc)
+          # Single, deliberately small historical request to test provider access.
+          end=now-dt.timedelta(days=35)
+          start=end-dt.timedelta(hours=3)
+          params={"symbol":"XAU/USD","interval":"1min","start_date":start.strftime("%Y-%m-%d %H:%M:%S"),"end_date":end.strftime("%Y-%m-%d %H:%M:%S"),"timezone":"UTC","outputsize":5,"apikey":key,"format":"JSON"}
+          try:
+              with urlopen("https://api.twelvedata.com/time_series?"+urlencode(params),timeout=30) as response:
+                  payload=json.load(response)
+              values=payload.get("values",[])
+              print(json.dumps({"probe":"historical_35_days_ago","status":payload.get("status","unknown"),"rows_returned":len(values),"error_code":payload.get("code") if not values else None,"message_category":"provider_rejected_or_no_data" if not values else "historical_rows_available","requested_window_utc":[start.isoformat(),end.isoformat()]}))
+          except Exception as exc:
+              print("Probe failed:",type(exc).__name__)
+          print("No candle contents, credentials or private data printed; no files or services changed.")
+          PY
