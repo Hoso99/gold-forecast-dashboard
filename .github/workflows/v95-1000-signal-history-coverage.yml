@@ -1,0 +1,55 @@
+name: V9.5 1000-Signal Historical Coverage Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  coverage:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate accessible M1 history and count independent reversal episodes
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 - <<'PY'
+          import csv, json, sqlite3, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd()))
+          from research.active_position_monitor.v95_mtf_exit_study import load
+          from research.active_position_monitor.v95_m5_m1_episode_study import analyze
+          sources = {
+              "Biquote": "/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3",
+              "TwelveDataPrivate": "/home/ubuntu/v95-private-export/twelvedata_hybrid_research.sqlite3",
+          }
+          for name, path in sources.items():
+              try:
+                  if not Path(path).is_file():
+                      print(f"{name}: unavailable to runner")
+                      continue
+                  m1 = load(path)
+                  result = analyze(m1)
+                  print(json.dumps({
+                      "source": name, "valid_m1": len(m1),
+                      "candidate_windows": result["m5_candidate_windows"],
+                      "independent_episodes": result["candidate_episodes"],
+                      "confirmed": result["confirmed_episodes"],
+                      "unconfirmed": result["unconfirmed_episodes"],
+                      "incomplete": result["incomplete_confirmation_windows"],
+                  }, sort_keys=True))
+              except (PermissionError, OSError) as e:
+                  print(f"{name}: inaccessible ({type(e).__name__}); private permissions unchanged")
+              except Exception as e:
+                  print(f"{name}: validation failed ({type(e).__name__}); not counted")
+          csvpath = Path("research/data/v94_forward_m1.csv")
+          if csvpath.is_file():
+              with csvpath.open(newline="", encoding="utf-8-sig") as f:
+                  reader=csv.DictReader(f)
+                  print("Forward M1 CSV columns:", ",".join(reader.fieldnames or []))
+                  print("Forward M1 CSV rows:", sum(1 for _ in reader))
+          print("Research-only inspection completed; no private data uploaded or changed.")
+          PY
