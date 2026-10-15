@@ -14,6 +14,8 @@ on:
       - 'research/feed_validation/v95_reconnect_timing_sim.py'
       - 'research/feed_validation/test_v95_reconnect_timing_sim.py'
       - 'research/feed_validation/v95_secondary_connection_probe.py'
+      - 'research/feed_validation/v95_independent_sqlite_store.py'
+      - 'research/feed_validation/test_v95_independent_sqlite_store.py'
   workflow_dispatch:
 permissions:
   contents: read
