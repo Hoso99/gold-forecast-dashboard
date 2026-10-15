@@ -21,6 +21,9 @@ on:
       - 'research/feed_validation/test_v95_phase_c_reliability_sim.py'
       - 'research/feed_validation/v95_independent_continuity_oracle_proof.py'
       - 'research/feed_validation/v95_secondary_reconnect_oracle_proof.py'
+      - 'research/feed_validation/v95_secondary_research_service.py'
+      - 'research/feed_validation/test_v95_secondary_research_service.py'
+      - 'research/feed_validation/v95-secondary-research.service'
   workflow_dispatch:
 permissions:
   contents: read
