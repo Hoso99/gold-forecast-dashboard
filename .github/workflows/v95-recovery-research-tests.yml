@@ -111,6 +111,28 @@ jobs:
                   elif isinstance(node, ast.Compare):
                       print("PROTOCOL_COMPARE", ",".join(type(op).__name__ for op in node.ops), "LINE", node.lineno)
           print("PROTOCOL_SHAPE_COMPLETE")
+          # Extract only literal-free syntax from collector lines 90-160 to
+          # identify SignalR message assembly and tick schema safely.
+          import copy
+          class Redact(ast.NodeTransformer):
+              def visit_Constant(self, n):
+                  if isinstance(n.value, str):
+                      return ast.copy_location(ast.Constant(value="<string>"), n)
+                  if isinstance(n.value, (int, float)):
+                      return ast.copy_location(ast.Constant(value=0), n)
+                  return n
+          lines = path.read_text(encoding="utf-8").splitlines()
+          selected = []
+          for n in tree.body:
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "collect":
+                  for statement in n.body:
+                      if 90 <= statement.lineno <= 160:
+                          sanitized = Redact().visit(copy.deepcopy(statement))
+                          selected.append(ast.unparse(sanitized))
+          for part in selected:
+              for line in part.splitlines()[:70]:
+                  print("REDACTED_AST", line[:180])
+          print("REDACTED_PROTOCOL_INSPECTION_COMPLETE")
           PY
 
   oracle-isolated-builder-smoke:
