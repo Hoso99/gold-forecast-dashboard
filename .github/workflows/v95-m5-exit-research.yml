@@ -52,5 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: v95-m5-research-db-metadata
-          path: |\n            m5_research_db_metadata.txt\n            v95_m5_history_summary.json
+          path: |
+            m5_research_db_metadata.txt
+            v95_m5_history_summary.json
           if-no-files-found: warn
