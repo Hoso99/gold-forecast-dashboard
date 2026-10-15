@@ -1,0 +1,26 @@
+name: V9.5 Biquote archive offline tests
+
+on:
+  push:
+    branches:
+      - research/v95-candle-recovery-20261014
+    paths:
+      - 'research/feed_validation/v95_biquote_archive.py'
+      - 'research/feed_validation/test_v95_biquote_archive.py'
+      - '.github/workflows/v95-biquote-archive-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  archive-offline-tests:
+    # GitHub-hosted runner: NEVER executes on the Oracle research server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run isolated archive tests
+        run: python -m unittest discover -s research/feed_validation -p 'test_v95_biquote_archive.py' -v
