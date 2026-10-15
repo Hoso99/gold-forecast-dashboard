@@ -133,6 +133,23 @@ jobs:
               for line in part.splitlines()[:70]:
                   print("REDACTED_AST", line[:180])
           print("REDACTED_PROTOCOL_INSPECTION_COMPLETE")
+          # Public protocol field names only; no literal payloads, endpoints or tokens.
+          public_fields = {"type", "target", "arguments", "invocationId", "protocol",
+                           "version", "M", "A", "R", "H", "P", "bid", "ask",
+                           "Bid", "Ask", "symbol", "Symbol", "timestamp",
+                           "Timestamp", "time", "Time", "date", "Date",
+                           "s", "b", "a", "t", "type", "data"}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Dict):
+                  fields = [k.value for k in node.keys if isinstance(k, ast.Constant)
+                            and isinstance(k.value, str) and k.value in public_fields]
+                  if fields:
+                      print("PUBLIC_PROTOCOL_FIELDS", ",".join(fields), "LINE", node.lineno)
+              if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+                  key = node.slice.value
+                  if isinstance(key, str) and key in public_fields:
+                      print("PUBLIC_SUBSCRIPT_FIELD", key, "LINE", node.lineno)
+          print("PUBLIC_PROTOCOL_FIELD_INSPECTION_COMPLETE")
           PY
 
   oracle-isolated-builder-smoke:
