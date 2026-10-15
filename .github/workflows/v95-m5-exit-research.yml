@@ -18,6 +18,10 @@ jobs:
           persist-credentials: false
       - name: Verify isolated research tests
         run: python3 -B -m unittest discover -s research/tests -p 'test_v95_m5_exit*.py' -v
+      - name: Verify sanitized exporter unit tests (no protected data)
+        run: python3 -B -m unittest discover -s research/tests -p 'test_v95_sanitized_trade_export.py' -v
+      - name: Identify V9.5 service account (read-only)
+        run: python3 -B -m research.active_position_monitor.v95_service_identity_audit
       - name: Inspect Biquote database metadata (read-only)
         shell: bash
         run: |
