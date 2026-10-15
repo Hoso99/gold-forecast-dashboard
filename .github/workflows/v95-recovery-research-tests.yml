@@ -150,6 +150,16 @@ jobs:
                   if isinstance(key, str) and key in public_fields:
                       print("PUBLIC_SUBSCRIPT_FIELD", key, "LINE", node.lineno)
           print("PUBLIC_PROTOCOL_FIELD_INSPECTION_COMPLETE")
+          # Emit only bounded public SignalR protocol identifiers, not endpoints,
+          # credentials, raw messages, symbols, or other arbitrary string literals.
+          safe_identifiers = {"json", "messagepack", "Subscribe", "SubscribeToSymbol",
+                              "SubscribeSymbol", "ReceiveTick", "ReceiveQuote",
+                              "tick", "Tick", "XAUUSD", "XAU/USD", "1"}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  if node.value in safe_identifiers:
+                      print("KNOWN_PROTOCOL_IDENTIFIER", node.value, "LINE", node.lineno)
+          print("KNOWN_PROTOCOL_IDENTIFIER_INSPECTION_COMPLETE")
           PY
 
   oracle-isolated-builder-smoke:
