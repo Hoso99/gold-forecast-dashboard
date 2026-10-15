@@ -20,6 +20,7 @@ on:
       - 'research/feed_validation/v95_phase_c_reliability_sim.py'
       - 'research/feed_validation/test_v95_phase_c_reliability_sim.py'
       - 'research/feed_validation/v95_independent_continuity_oracle_proof.py'
+      - 'research/feed_validation/v95_secondary_reconnect_oracle_proof.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -238,3 +239,20 @@ jobs:
           python3 -m venv "${{ runner.temp }}/v95-continuity-proof-venv"
           "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
           "${{ runner.temp }}/v95-continuity-proof-venv/bin/python" research/feed_validation/v95_independent_continuity_oracle_proof.py
+
+  oracle-secondary-controlled-reconnect:
+    # Disconnect only the short-lived secondary research socket; never primary.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Controlled secondary-only Biquote disconnect and recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${{ runner.temp }}/v95-reconnect-proof-venv"
+          "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" -m pip install --disable-pip-version-check --quiet 'websocket-client>=1.7,<2'
+          "${{ runner.temp }}/v95-reconnect-proof-venv/bin/python" research/feed_validation/v95_secondary_reconnect_oracle_proof.py
