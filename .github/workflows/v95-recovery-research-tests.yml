@@ -13,6 +13,7 @@ on:
       - '.github/workflows/v95-recovery-research-tests.yml'
       - 'research/feed_validation/v95_reconnect_timing_sim.py'
       - 'research/feed_validation/test_v95_reconnect_timing_sim.py'
+      - 'research/feed_validation/v95_secondary_connection_probe.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -180,3 +181,18 @@ jobs:
           python3 -m unittest discover -s research/feed_validation -p 'test_v95_reconnect_timing_sim.py' -v
           python3 -m py_compile research/feed_validation/v95_independent_candle_builder.py
           echo ORACLE_RESEARCH_BUILDER_SMOKE_OK
+
+  oracle-secondary-session-probe:
+    # Single 20-second second-session probe; no persistence or service changes.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'Hoso99/gold-forecast-dashboard' && github.event.pull_request.head.ref == 'research/v95-candle-recovery-20261014' && github.event.pull_request.base.ref == 'research/v95-detector-implementation' }}
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe independent XAUUSD Biquote session without database writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 research/feed_validation/v95_secondary_connection_probe.py
