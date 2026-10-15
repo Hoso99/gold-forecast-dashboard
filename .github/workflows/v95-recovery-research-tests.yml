@@ -11,6 +11,8 @@ on:
       - 'research/active_position_monitor/v95_paper_monitor.py'
       - 'research/active_position_monitor/test_v95_paper_monitor.py'
       - '.github/workflows/v95-recovery-research-tests.yml'
+      - 'research/feed_validation/v95_reconnect_timing_sim.py'
+      - 'research/feed_validation/test_v95_reconnect_timing_sim.py'
   workflow_dispatch:
 permissions:
   contents: read
