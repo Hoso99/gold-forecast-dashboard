@@ -17,6 +17,8 @@ on:
       - 'research/feed_validation/v95_independent_sqlite_store.py'
       - 'research/feed_validation/test_v95_independent_sqlite_store.py'
       - 'research/feed_validation/v95_independent_m1_oracle_proof.py'
+      - 'research/feed_validation/v95_phase_c_reliability_sim.py'
+      - 'research/feed_validation/test_v95_phase_c_reliability_sim.py'
   workflow_dispatch:
 permissions:
   contents: read
