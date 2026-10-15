@@ -1,0 +1,31 @@
+# Prepared ONLY — do not install without explicit deployment approval.
+# Intended to run as existing unprivileged v95research user on Oracle Always Free.
+[Unit]
+Description=V9.5 independent Biquote XAUUSD research-only M1 backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=v95research
+Group=v95research
+WorkingDirectory=/home/v95research/v95-secondary-research
+Environment=PYTHONUNBUFFERED=1
+Environment=V95_SECONDARY_DB=/home/v95research/v95-backup-research/biquote_independent_m1.sqlite3
+ExecStart=/home/v95research/v95-secondary-research/.venv/bin/python /home/v95research/v95-secondary-research/v95_secondary_research_service.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/v95research/v95-backup-research
+UMask=0077
+MemoryMax=192M
+TasksMax=32
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
