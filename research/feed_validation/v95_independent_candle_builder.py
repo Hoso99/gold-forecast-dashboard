@@ -1,4 +1,8 @@
-"""Research-only independent M1 validation; no feed or database access."""
+"""Research-only independent M1 validation; no feed or database access.
+
+Prices are Biquote BID observations, matching the existing Oracle collector.
+Do not substitute bid/ask midpoint or fabricate missing observations.
+"""
 from datetime import timedelta
 from math import isfinite
 
