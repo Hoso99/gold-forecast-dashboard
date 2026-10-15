@@ -127,16 +127,21 @@ def main():
         raise SystemExit("Unapproved secondary database path")
     backoff = 2
     while not STOP:
+        started = time.monotonic()
         try:
             count = collect_session(path)
             LOG.info("session ended validated_m1=%d", count)
-            backoff = 2
         except Exception as exc:
             # Never log raw frames, tokens or prices.
             LOG.warning("secondary session reset reason=%s", type(exc).__name__)
-        if not STOP:
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+        if STOP:
+            break
+        # Reset delay only after a stable session, not after a fast failure.
+        if time.monotonic() - started >= 120:
+            backoff = 2
+        LOG.info("secondary reconnect delay_seconds=%d", backoff)
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 60)
 
 
 if __name__ == "__main__":
