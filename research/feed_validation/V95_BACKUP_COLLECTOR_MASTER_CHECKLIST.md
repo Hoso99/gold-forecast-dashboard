@@ -35,12 +35,12 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [x] Existing V9.4 and V9.5 services left unchanged by these research commits.
 
 ## Phase A — Genuine independent Biquote WebSocket transport
-- [ ] Confirm exact primary subscription fields and tick schema through privacy-safe local inspection; avoid logging secrets.
+- [x] Confirm exact primary subscription fields and tick schema through privacy-safe local inspection; avoid logging secrets. SignalR Subscribe arguments must be nested: [['XAUUSD']].
 - [ ] Implement isolated SignalR handshake, subscribe, heartbeat/timeout, reconnect/backoff, UTC source timestamps, XAUUSD filter and bid/ask validation.
 - [ ] Add tests for malformed frames, wrong symbols, out-of-order/stale ticks, disconnects and reconnects.
-- [ ] Verify the provider permits a simultaneous second independent session; do not disrupt the primary.
-- [ ] Run a short controlled research-only connection probe on Oracle with no database writes.
-- [ ] Confirm authentic incoming Biquote ticks and correct bid basis; record only safe counts/status, never payloads.
+- [x] Verify the provider permits a simultaneous second independent session; do not disrupt the primary. Oracle run 38707386525: connected and subscription acknowledged.
+- [x] Run a short controlled research-only connection probe on Oracle with no database writes. 20 seconds, no DB writes.
+- [x] Confirm authentic incoming Biquote ticks and correct bid basis; record only safe counts/status, never payloads. 40/40 valid XAUUSD ticks (run 38707386525).
 
 ## Phase B — Independent M1 storage
 - [ ] Implement separate SQLite database schema under research-only directory owned by restricted account.
@@ -68,7 +68,7 @@ Run a second, genuinely independent Biquote XAU/USD WebSocket collector on Oracl
 - [ ] Only mark BACKUP LIVE when service active AND fresh genuine validated candles confirmed.
 
 ## Current gate
-STOP before enabling a continuous service: Phase A live second-session verification and Phase B isolated persistence are not yet complete.
+STOP before enabling a continuous service: Phase A short second-session connection verified (40 valid ticks, run 38707386525), but Phase B isolated persistence and long-running reconnection testing are not yet complete.
 
 ## Working procedure for every future step
 1. Read this checklist before changes.
