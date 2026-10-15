@@ -1,0 +1,50 @@
+name: V9.5 M5 Exit Research — Read Only
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m5-exit-research:
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify isolated research tests
+        run: python3 -B -m unittest discover -s research/tests -p test_v95_m5_exit_challenger.py -v
+      - name: Inspect Biquote database metadata (read-only)
+        shell: bash
+        run: |
+          python3 -B - <<'PY' > m5_research_db_metadata.txt
+          import os, sqlite3
+          path = "/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3"
+          if not os.path.isfile(path):
+              print("DATABASE_NOT_ACCESSIBLE")
+          else:
+              try:
+                  con = sqlite3.connect("file:" + path + "?mode=ro&immutable=1", uri=True)
+                  try:
+                      print("DATABASE_READABLE")
+                      for (table,) in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
+                          if not table.replace("_","").isalnum():
+                              continue
+                          cols = [row[1] for row in con.execute('PRAGMA table_info("'+table+'")')]
+                          print(table + ": " + ", ".join(cols))
+                  finally:
+                      con.close()
+              except (sqlite3.Error, OSError) as exc:
+                  print("DATABASE_INSPECTION_FAILED: " + type(exc).__name__)
+          PY
+      - name: Upload research metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-m5-research-db-metadata
+          path: m5_research_db_metadata.txt
+          if-no-files-found: warn
