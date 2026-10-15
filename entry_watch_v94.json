@@ -1,12 +1,10 @@
 {
-  "basis": "10-candle SELL + quality CONFIRMED",
-  "buy_power": 0.388596,
-  "entry_reference": 4146.4527,
-  "last_alert_key": "2026-10-15T04:00:00+00:00|SELL",
-  "last_alert_price": 4146.4527,
-  "model_time": "2026-10-15T04:00:00+00:00",
-  "sell_power": 0.611404,
-  "side": "SELL",
-  "structure_reason": "10-candle SELL power + mandatory structure/ATR SL + 2R TP",
-  "threshold": 4146.4527
+  "basis": "10-candle SELL blocked: quality MIXED",
+  "buy_power": 0.41627,
+  "entry_reference": 4145.9326,
+  "model_time": "2026-10-15T04:30:00+00:00",
+  "sell_power": 0.58373,
+  "side": "WAIT",
+  "structure_reason": "no directional setup",
+  "threshold": null
 }
