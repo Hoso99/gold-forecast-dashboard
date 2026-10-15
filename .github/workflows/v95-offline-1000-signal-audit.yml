@@ -1,0 +1,39 @@
+name: V9.5 Offline 1000-Signal Data Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect historical M1 coverage (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          sources = {
+              "Biquote": "/home/ubuntu/v95-detector-dev/research/feed_validation/biquote_m1.sqlite3",
+              "TwelveDataResearch": "/home/ubuntu/v95-private-export/twelvedata_hybrid_research.sqlite3",
+          }
+          for label, path in sources.items():
+              p = Path(path)
+              if not p.is_file():
+                  print(f"{label}: NOT_ACCESSIBLE")
+                  continue
+              try:
+                  with sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True) as db:
+                      tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+                      if "candles" not in tables:
+                          print(f"{label}: candles table missing")
+                          continue
+                      cols = [r[1] for r in db.execute("PRAGMA table_info(candles)")]
+                      count = db.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+                      print(f"{label}: M1 rows={count}; columns={','.join(cols)}")
+              except Exception as exc:
+                  print(f"{label}: read-only audit error: {type(exc).__name__}")
+          print("Target: 1000 independent M5 candidate episodes; existing verified baseline: 21.")
+          print("Audit only: no strategy execution, no service changes, no private data upload.")
+          PY
