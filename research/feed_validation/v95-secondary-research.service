@@ -15,6 +15,7 @@ Environment=V95_SECONDARY_DB=/home/v95research/v95-backup-research/biquote_indep
 ExecStart=/home/v95research/v95-secondary-research/.venv/bin/python /home/v95research/v95-secondary-research/v95_secondary_research_service.py
 Restart=always
 RestartSec=10
+TimeoutStopSec=20
 StartLimitIntervalSec=0
 NoNewPrivileges=true
 PrivateTmp=true
