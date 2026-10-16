@@ -25,9 +25,10 @@ def replay(m1,group,cost_bps):
     for t in range(begin,anchor+46):
         b=m1[t];history.append(b)
         action=model.on_completed_m1(b)["action"]
+        confirmation=gate.observe(t,b,previous,action,history[-6:-1])
         if t>=anchor:
             if action in EXIT and raw is None:raw=t
-            if gate.observe(t,b,previous,action,history[-6:-1])=="CONFIRM" and c21 is None:c21=t
+            if confirmation=="CONFIRM" and c21 is None:c21=t
         previous=b
     entry=m1[anchor+1]["o"]
     terminal=anchor+45
