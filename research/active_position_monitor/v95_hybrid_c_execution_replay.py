@@ -12,7 +12,7 @@ import sqlite3
 from statistics import mean
 from datetime import datetime, timezone
 from pathlib import Path
-from research.active_position_monitor.v95_hybrid_c_research import HybridC
+from research.active_position_monitor.v95_hybrid_c_research import HybridC, Config
 
 EXIT = {"ADAPTIVE_EXIT", "EARLY_PROFIT_EXIT"}
 REJECT = "FALSE_REVERSAL_HOLD"
@@ -45,8 +45,8 @@ def atr(bars, n=14):
     return mean(trs)
 
 def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0,
-           entry_time=None, min_stop_atr=1.5):
-    model=HybridC()
+           entry_time=None, min_stop_atr=1.5, power_mode='raw'):
+    model=HybridC(cfg=Config(power_mode=power_mode))
     model.cfg.cost_per_oz=cost
     if entry_time is None: model.open_initial(entry,stop,target)
     trades=[]
@@ -144,6 +144,7 @@ def main():
     parser.add_argument("--cost-per-oz",type=float,default=0.0)
     parser.add_argument("--entry-time",help="verified UTC ISO timestamp of original SELL entry")
     parser.add_argument("--min-stop-atr",type=float,default=1.5)
+    parser.add_argument("--power-mode",choices=("raw","atr"),default="raw")
     args=parser.parse_args()
     if args.cost_per_oz<0: parser.error("cost cannot be negative")
     if args.min_stop_atr<=0: parser.error('min-stop-atr must be positive')
@@ -158,8 +159,9 @@ def main():
         print('WARNING: no verified entry timestamp; scenario only')
     print("RESEARCH ONLY: paper fill simulation; verify original entry timestamp.")
     print("No live orders; costs only if supplied; no economic-event feed.")
+    print("Power mode:",args.power_mode)
     for variant in ("C1","C2"):
-        result=replay(rows,variant,cost=args.cost_per_oz,entry_time=entry_time,min_stop_atr=args.min_stop_atr)
+        result=replay(rows,variant,cost=args.cost_per_oz,entry_time=entry_time,min_stop_atr=args.min_stop_atr,power_mode=args.power_mode)
         print("\n",variant,"status:",result["status"])
         for trade in result["trades"]: print("TRADE",trade)
         for event in result["events"]: print("EVENT",event)
