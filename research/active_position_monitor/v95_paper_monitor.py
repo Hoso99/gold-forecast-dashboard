@@ -392,6 +392,18 @@ def evaluate(rows,state,news_context=None):
             f"bearish liquidity sweep={core_detectors.get('bearish_liquidity_sweep')}, "
             f"H1 bearish={trend}, H4 advisory bearish={h4_bearish}, "
             f"support buffer={location}")
+    # Preserve a qualifying technical SELL independently of news authorization.
+    # This is research metadata only, never a position or broker order.
+    state["last_technical_sell_opportunity"] = {
+        "bar": rows[-1]["t"].isoformat(),
+        "price": price,
+        "sell_power": round(power, 2),
+        "news_risk": (news_context or {}).get("risk", "UNKNOWN"),
+        "paper_entry_authorized_by_news": (
+            os.getenv("V95_NEWS_GATE_ENABLED", "1") != "1"
+            or (news_context or {}).get("risk") == "NORMAL"
+        ),
+    }
     # Only new paper entries are subject to the USD calendar gate. Existing
     # positions have already returned above, so protective exits never depend
     # on calendar availability. Missing or unverified context fails closed.
