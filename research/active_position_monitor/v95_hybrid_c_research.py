@@ -7,6 +7,7 @@ not validated signals. Price-body power is NOT traded buy/sell volume.
 from dataclasses import dataclass, field
 from collections import deque
 from statistics import mean
+from research.active_position_monitor.v95_c2_raw_scenario_monitor import RawScenarioMonitor
 
 @dataclass
 class Config:
@@ -39,6 +40,7 @@ class Config:
     stop_buffer: float = 0.0
     cost_per_oz: float = 0.0
     max_reentries_per_window: int = 1
+    scenario_monitor_enabled: bool = False
 
 def power(bars):
     up = sum(max(x["c"]-x["o"], 0) for x in bars)
@@ -126,6 +128,7 @@ class HybridC:
     reversal_anchor: float | None = None
     reversal_peak_buy: float | None = None
     reversal_age: int = 0
+    scenario_monitor: RawScenarioMonitor = field(default_factory=RawScenarioMonitor)
 
     def open_initial(self, entry, stop, target):
         if self.position is not None:
@@ -133,6 +136,16 @@ class HybridC:
         self.position = PaperSell(entry, stop, target)
 
     def on_completed_m1(self, raw, *, high_risk_event=False, entry_allowed=True):
+        result = self._on_completed_m1_core(raw, high_risk_event=high_risk_event,
+                                            entry_allowed=entry_allowed)
+        if self.cfg.scenario_monitor_enabled and self.cfg.power_mode == "raw":
+            result = dict(result)
+            result["scenario_monitor"] = self.scenario_monitor.classify(
+                list(self.bars), self.position, result["action"],
+                high_risk_event=high_risk_event)
+        return result
+
+    def _on_completed_m1_core(self, raw, *, high_risk_event=False, entry_allowed=True):
         """Return paper decision after a COMPLETED M1 bar. All exits at NEXT M1 open
         must be simulated by caller; emitted prices are signal references only.
         OHLC SL/TP ambiguity is explicitly flagged; never invent touch order.
