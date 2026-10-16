@@ -166,7 +166,10 @@ def save(state):
 
 
 def candles():
-    """Read genuine completed Biquote M1 candles, tolerating historical gaps."""
+    """Read coherent Twelve Data M1 only when explicitly configured for PAPER."""
+    if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper() == "TWELVE_DATA":
+        from v95_twelve_cache_reader_staging import read_candles
+        return read_candles()
     from v95_resilient_biquote_reader import read_candles
     return read_candles()
 
@@ -505,7 +508,11 @@ def cycle():
     # A calendar failure must not prevent SL/TP and early-exit evaluation.
     if os.getenv("V95_NEWS_GATE_ENABLED","1")=="1":
         try:
-            news_context=fetch_calendar_context()
+            if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper() == "TWELVE_DATA":
+                # No unverified replacement calendar: preserve fail-closed news gate.
+                news_context={"risk":"UNKNOWN","source":"NO_VALIDATED_CALENDAR"}
+            else:
+                news_context=fetch_calendar_context()
         except Exception as exc:
             news_context={"risk":"UNKNOWN","error_type":type(exc).__name__}
     else:
