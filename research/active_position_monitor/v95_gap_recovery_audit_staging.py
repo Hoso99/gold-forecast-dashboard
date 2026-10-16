@@ -41,8 +41,16 @@ def audit(primary, secondary=None, lookback=270):
         "writes_performed": False,
         "entry_gate_bypassed": False,
     }
-    if secondary and secondary.exists():
-        other = read_minutes(secondary, "independent_m1", "minute_utc")
+    other = None
+    if secondary is not None:
+        try:
+            other = read_minutes(secondary, "independent_m1", "minute_utc")
+        except (OSError, sqlite3.Error) as exc:
+            report["secondary_status"] = "unavailable: " + type(exc).__name__
+    else:
+        report["secondary_status"] = "not configured"
+    if other is not None:
+        report["secondary_status"] = "readable"
         report["recoverable_from_secondary_utc"] = [
             t.isoformat() for t in gaps if t in other
         ]
@@ -51,7 +59,6 @@ def audit(primary, secondary=None, lookback=270):
         ]
     else:
         report["unrecoverable_without_historical_source_utc"] = report["missing_utc"]
-        report["secondary_status"] = "unavailable"
     return report
 
 
