@@ -15,6 +15,10 @@ class Config:
     min_accel_pp: float = 12.0
     strong_accel_pp: float = 30.0
     confirm_bars: int = 2
+    false_buy_drop_pp: float = 15.0
+    false_sell_power: float = 60.0
+    false_sell_accel_pp: float = 10.0
+    false_window_bars: int = 3
     profit_watch_r: float = 0.5
     profit_sensitive_r: float = 1.0
     high_profit_r: float = 1.5
@@ -63,6 +67,9 @@ class HybridC:
     reentries: int = 0
     events: list = field(default_factory=list)
     last_close: float | None = None
+    reversal_anchor: float | None = None
+    reversal_peak_buy: float | None = None
+    reversal_age: int = 0
 
     def open_initial(self, entry, stop, target):
         if self.position is not None:
@@ -109,8 +116,28 @@ class HybridC:
             warning = buy >= self.cfg.early_buy_power and accel >= self.cfg.min_accel_pp
             strong = (buy >= self.cfg.strong_buy_power and
                       accel >= self.cfg.strong_accel_pp and bullish_break)
-            # Reject a candidate if buyers are visibly rejected by completed close.
-            rejected = bearish_body and b["c"] < a[-2]["c"] and not bullish_break
+            # False-reversal detector: causal, time-limited, two-of-three vote.
+            # Anchor is the resistance broken by a bullish close, fixed at the
+            # moment of that break; never updated with later price information.
+            if bullish_break and self.reversal_anchor is None:
+                self.reversal_anchor = max(x["h"] for x in a[-6:-1])
+                self.reversal_peak_buy = buy
+                self.reversal_age = 0
+            if self.reversal_anchor is not None:
+                self.reversal_age += 1
+                self.reversal_peak_buy = max(self.reversal_peak_buy, buy)
+            buy_collapse = (self.reversal_peak_buy is not None and
+                            self.reversal_peak_buy - buy >= self.cfg.false_buy_drop_pp)
+            lost_structure = (self.reversal_anchor is not None and
+                              b["c"] < self.reversal_anchor)
+            sell_recovery = (sell >= self.cfg.false_sell_power and
+                             sell_accel >= self.cfg.false_sell_accel_pp and bearish_body)
+            false_votes = sum((buy_collapse, lost_structure, sell_recovery))
+            rejected = self.reversal_anchor is not None and false_votes >= 2
+            if rejected or self.reversal_age > self.cfg.false_window_bars:
+                self.reversal_anchor = None
+                self.reversal_peak_buy = None
+                self.reversal_age = 0
             profit_watch = unrealized >= self.cfg.profit_watch_r and (warning or giveback >= self.cfg.giveback_r)
             profit_exit = (unrealized > 0 and p.peak_r >= self.cfg.profit_watch_r
                            and giveback >= self.cfg.giveback_r
@@ -123,7 +150,7 @@ class HybridC:
                 self.pending = 0
             sensitive = unrealized >= self.cfg.profit_sensitive_r or p.peak_r >= self.cfg.high_profit_r
             confirmed = self.pending >= (1 if sensitive else self.cfg.confirm_bars) and bullish_body
-            if strong or profit_exit or confirmed:
+            if (strong or profit_exit or confirmed) and not rejected:
                 self.pending = 0
                 result = {"action":"EARLY_PROFIT_EXIT" if unrealized > 0 else "ADAPTIVE_EXIT",
                           "reason":"strong reversal" if strong else "profit giveback + reversal" if profit_exit else "adaptive M1 confirmation",
@@ -132,6 +159,14 @@ class HybridC:
                           "giveback_r":round(giveback,4),
                           "execution":"next M1 open; not executed here"}
                 # State transition is a paper exit REQUEST; caller must confirm fill.
+            elif rejected:
+                result = {"action":"FALSE_REVERSAL_HOLD",
+                          "reason":"at least two causal false-reversal checks",
+                          "votes":false_votes,
+                          "buy_power_drop":buy_collapse,
+                          "lost_bullish_structure":lost_structure,
+                          "renewed_sell_pressure":sell_recovery,
+                          "r_reference":round(unrealized,4)}
             elif profit_watch:
                 result = {"action":"PROFIT_PROTECTION_WATCH", "r_reference":round(unrealized,4),
                           "giveback_r":round(giveback,4)}
@@ -172,6 +207,9 @@ class HybridC:
             raise ValueError("No open position")
         self.position = None
         self.pending = 0
+        self.reversal_anchor = None
+        self.reversal_peak_buy = None
+        self.reversal_age = 0
         self.reentry_left = self.cfg.reentry_minutes
         self.reentries = 0
 
