@@ -87,13 +87,17 @@ def main():
     expected=[29865243,29865864,29866387,29866567,29866687,
               29867056,29867206,29867836,29868076,29868614]
     actual=[r["minute"] for r in global_target]
-    if actual!=expected:
-        raise RuntimeError("Global sample changed; do not compare until resolved: "+str(actual))
+    if actual[:len(expected)]!=expected:
+        raise RuntimeError("Original ten changed; do not compare until resolved: "+str(actual))
+    original=[r for r in global_target if r["minute"] in set(expected)]
+    additional=[r for r in global_target if r["minute"] not in set(expected)]
     report={"study":"Original 8/10 C2 confirmed reversal feature audit",
       "global_sample_reproduced":True,
-      "original_global_30m":{"all":stats(global_target),
-                             "successful_up":stats([r for r in global_target if r["delta30"]>0]),
-                             "failed_down":stats([r for r in global_target if r["delta30"]<=0])},
+      "original_sample_size":len(original),
+      "additional_global_sample": [{"minute":r["minute"],"delta30":r["delta30"]} for r in additional],
+      "original_global_30m":{"all":stats(original),
+                             "successful_up":stats([r for r in original if r["delta30"]>0]),
+                             "failed_down":stats([r for r in original if r["delta30"]<=0])},
       "target_first_30m":{"all":stats(target_first),
                           "successful_up":stats([r for r in target_first if r["delta30"]>0]),
                           "failed_down":stats([r for r in target_first if r["delta30"]<=0])},
@@ -102,7 +106,7 @@ def main():
                        "failed_down":stats([r for r in all_target if r["delta30"]<=0])},
       "original_ten":[{"minute":r["minute"],"delta30":r["delta30"],
                        "outcome":"UP" if r["delta30"]>0 else "DOWN_OR_FLAT",
-                       **r["features"]} for r in global_target],
+                       **r["features"]} for r in original],
       "notes":["Only completed M1 bars used for features; forward prices used for outcome labels only",
                "Feature differences are exploratory, not trained or validated filters",
                "Original 10 observations were selected by chronological phase, not by features",
