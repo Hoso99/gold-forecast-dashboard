@@ -17,10 +17,10 @@ HORIZONS=(5,10,15,30)
 def study(m1,group):
     anchor=group[0]*5+4
     begin=anchor-99
-    end=anchor+30
+    end=anchor+45
     if any(t not in m1 for t in range(begin,end+1)):
         return {"status":"SKIP_GAP"}
-    prices=[m1[t]["c"] for t in range(begin,end+1)]
+    prices=[m1[t]["c"] for t in range(begin,anchor+1)]
     model=HybridC(cfg=Config(power_mode="raw"))
     model.open_initial(m1[begin]["c"],max(prices)+10000,min(prices)-10000)
     gate=C21Confirm()
