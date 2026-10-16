@@ -40,7 +40,7 @@ def main():
    t=parse(minute)
    if t.second or t.microsecond:nonminute+=1;continue
    vals=[float(v) for v in (o,h,l,c)]
-   if not (all(v==v and abs(v)<1e10 for v in vals) and vals[2]>=max(vals[0],vals[3]) and vals[1]<=min(vals[0],vals[3]) and vals[2]>=vals[1]):invalid_ohlc+=1;continue
+   if not (all(v==v and abs(v)<1e10 for v in vals) and vals[1]>=max(vals[0],vals[3]) and vals[2]<=min(vals[0],vals[3]) and vals[1]>=vals[2]):invalid_ohlc+=1;continue
    if t>now:future+=1;continue
    times.append(t)
   except (ValueError,TypeError,OverflowError):bad+=1
