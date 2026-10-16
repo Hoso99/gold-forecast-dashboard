@@ -16,41 +16,62 @@ def get_json(url):
 def parse_utc(value):
     return dt.datetime.fromisoformat(value.replace("Z","+00:00")).astimezone(UTC)
 
-def event_context(events,now=None):
-    now=now or dt.datetime.now(UTC)
-    relevant=[]
+def event_context(events, now=None):
+    """Classify the V9.4 upcoming-calendar format; fail closed on invalid data."""
+    now = now or dt.datetime.now(UTC)
+    if not isinstance(events, list):
+        raise ValueError("Biquote calendar response is not a list")
+    risk_rank = {"NORMAL": 0, "WATCH": 1, "HIGH": 2, "IMMINENT": 3}
+    risk = "NORMAL"
+    relevant = []
+    valid = 0
     for event in events:
-        name=str(event.get("name",""))
-        if event.get("countryCode")!="US" or not any(x in name.lower() for x in HIGH_TERMS):
+        if not isinstance(event, dict):
+            raise ValueError("Malformed Biquote calendar event")
+        name = event.get("name")
+        time_text = event.get("time")
+        if not isinstance(name, str) or not name.strip() or not isinstance(time_text, str):
+            raise ValueError("Biquote calendar event missing name/time")
+        when = parse_utc(time_text)
+        valid += 1
+        minutes = (when - now).total_seconds() / 60
+        if minutes < 0:
             continue
-        if event.get("timeMode")!="exact" or not event.get("time"):
-            continue
-        try:
-            when=parse_utc(event["time"])
-        except (ValueError,TypeError):
-            continue
-        delta=(when-now).total_seconds()/60
-        if -30<=delta<=240:
-            relevant.append({"name":name,"utc":when.isoformat(),
-                             "cyprus":when.astimezone(ZoneInfo("Asia/Nicosia")).isoformat(),
-                             "minutes_to_event":round(delta,1),
-                             "very_high":any(x in name.lower() for x in VERY_HIGH)})
-    relevant.sort(key=lambda x:abs(x["minutes_to_event"]))
-    imminent=any(-15<=x["minutes_to_event"]<=30 for x in relevant)
-    buildup=any(0<=x["minutes_to_event"]<=120 for x in relevant)
-    return {"events":relevant[:10],"risk":"IMMINENT" if imminent else "BUILDING" if buildup else "NORMAL"}
+        name_lower = name.lower()
+        if any(term in name_lower for term in VERY_HIGH):
+            relevance = "VERY HIGH"
+            event_risk = "IMMINENT" if minutes <= 30 else "HIGH" if minutes <= 120 else "WATCH" if minutes <= 360 else "NORMAL"
+        elif any(term in name_lower for term in HIGH_TERMS):
+            relevance = "HIGH"
+            event_risk = "IMMINENT" if minutes <= 15 else "HIGH" if minutes <= 60 else "WATCH" if minutes <= 180 else "NORMAL"
+        else:
+            relevance = "MODERATE"
+            event_risk = "NORMAL"
+        if risk_rank[event_risk] > risk_rank[risk]:
+            risk = event_risk
+        if relevance != "MODERATE":
+            relevant.append({
+                "name": name,
+                "utc": when.isoformat(),
+                "cyprus": when.astimezone(ZoneInfo("Asia/Nicosia")).isoformat(),
+                "minutes_to_event": round(minutes, 1),
+                "relevance": relevance,
+                "risk": event_risk,
+            })
+    if not valid:
+        raise ValueError("Biquote calendar returned no verifiable events")
+    relevant.sort(key=lambda event: event["minutes_to_event"])
+    return {"risk": risk, "events": relevant[:10], "source": "BIQUOTE_UPCOMING_US_HIGH", "event_count": valid}
+
 
 def fetch_calendar_context(now=None):
-    """Fetch high-importance US events independently of XAUUSD quote availability."""
-    now=now or dt.datetime.now(UTC)
-    start=(now-dt.timedelta(hours=1)).isoformat().replace("+00:00","Z")
-    end=(now+dt.timedelta(hours=5)).isoformat().replace("+00:00","Z")
-    params=urlencode({"from":start,"to":end,"countries":"US","importance":"high","limit":200})
-    events=get_json("https://biquote.io/api/calendar?"+params)
-    if not isinstance(events,list):
-        raise ValueError("Biquote calendar unexpected response")
-    return event_context(events,now)
-
+    """V9.4-compatible high-importance US calendar; independent of quote feed."""
+    now = now or dt.datetime.now(UTC)
+    events = get_json(
+        "https://biquote.io/api/calendar/upcoming"
+        "?countries=US&importance=high&limit=20"
+    )
+    return event_context(events, now)
 
 def fetch_context(now=None):
     """Optional quote + macro context; news gate uses fetch_calendar_context instead."""
