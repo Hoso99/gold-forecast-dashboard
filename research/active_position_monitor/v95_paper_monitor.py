@@ -15,7 +15,6 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from v95_indicators import diagnostics
-from v95_biquote import fetch_context, fetch_calendar_context
 from v95_research_votes import votes
 from v95_telegram_format import format_alert
 from v95_entry_exit_shadow import entry_diagnostics, exit_diagnostics
@@ -439,7 +438,7 @@ def journal_decision(action,note,state):
     JOURNAL.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     row={"version":"V9.5_RESEARCH","observed_at_utc":dt.datetime.now(UTC).isoformat(),
          "m1_bar_start_utc":state.get("last_bar"),"decision":action,
-         "reason":note,"source":"BIQUOTE_XAUUSD_M1",
+         "reason":note,"source":("TWELVE_DATA_XAUUSD_M1" if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper()=="TWELVE_DATA" else "BIQUOTE_XAUUSD_M1"),
          "paper_position_open":bool(state.get("paper_position")),"broker_execution":False,
          "diagnostics":state.get("diagnostics",{}),
          "research_votes":state.get("research_votes",{}),
@@ -512,18 +511,22 @@ def cycle():
                 # No unverified replacement calendar: preserve fail-closed news gate.
                 news_context={"risk":"UNKNOWN","source":"NO_VALIDATED_CALENDAR"}
             else:
+                from v95_biquote import fetch_calendar_context
                 news_context=fetch_calendar_context()
         except Exception as exc:
             news_context={"risk":"UNKNOWN","error_type":type(exc).__name__}
     else:
         news_context={"risk":"DISABLED"}
+    if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper()=="TWELVE_DATA":
+        state.pop("biquote_context", None)
     state["news_context"]=news_context
     updated,action,note=evaluate(rows,state,news_context)
     updated["last_event"]=action
     # Context is logged independently. No assumed Biquote pressure or fabricated data.
     # An unavailable optional context feed is explicitly recorded as UNKNOWN.
-    if os.getenv("V95_BIQUOTE_ENABLED","0")=="1":
+    if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper() != "TWELVE_DATA" and os.getenv("V95_BIQUOTE_ENABLED","0")=="1":
         try:
+            from v95_biquote import fetch_context
             updated["biquote_context"]=fetch_context()
         except Exception as exc:
             updated["biquote_context"]={"risk":"UNKNOWN","error_type":type(exc).__name__}
