@@ -10,6 +10,11 @@ from statistics import mean
 
 @dataclass
 class Config:
+    # Research-only option. "raw" preserves original C2 exactly.
+    # "atr" weights each candle body by its own causal rolling ATR.
+    power_mode: str = "raw"
+    atr_period: int = 14
+    atr_floor: float = 1e-8
     early_buy_power: float = 58.0
     strong_buy_power: float = 72.0
     min_accel_pp: float = 12.0
@@ -35,6 +40,35 @@ def power(bars):
     up = sum(max(x["c"]-x["o"], 0) for x in bars)
     down = sum(max(x["o"]-x["c"], 0) for x in bars)
     return 100*up/(up+down) if up+down else 50.
+
+def atr_normalized_power(bars, period=14, floor=1e-8):
+    """Directional body power with each bar divided by its trailing ATR.
+
+    The ATR at each bar uses only that bar and preceding bars, never future
+    observations. Return None until 14 true-range observations exist.
+    Normalizing with one shared ATR would cancel out of the ratio and do
+    nothing; individual per-bar ATR is essential.
+    """
+    if period < 2 or len(bars) < period + 10:
+        return None
+    weighted = []
+    for i in range(period, len(bars)):
+        window = bars[i-period+1:i+1]
+        tr = []
+        for j in range(i-period+1, i+1):
+            previous_close = bars[j-1]["c"]
+            b = bars[j]
+            tr.append(max(b["h"]-b["l"], abs(b["h"]-previous_close),
+                          abs(b["l"]-previous_close)))
+        volatility = sum(tr)/period
+        b = bars[i]
+        weighted.append((max(b["c"]-b["o"], 0)/max(volatility, floor),
+                         max(b["o"]-b["c"], 0)/max(volatility, floor)))
+    def ratio(part):
+        up = sum(x[0] for x in part)
+        down = sum(x[1] for x in part)
+        return 100*up/(up+down) if up+down else 50.
+    return ratio(weighted[-5:]), ratio(weighted[-10:-5])
 
 def check(bar):
     b = {k: float(bar[k]) for k in ("o","h","l","c")}
@@ -85,10 +119,17 @@ class HybridC:
         self.bars.append(b)
         a = list(self.bars)
         result = {"action":"WAIT", "reference_close":b["c"], "reason":"insufficient history"}
-        if len(a) < 11:
+        if self.cfg.power_mode not in ("raw", "atr"):
+            raise ValueError("power_mode must be raw or atr")
+        needed = 11 if self.cfg.power_mode == "raw" else self.cfg.atr_period + 10
+        if len(a) < needed:
             return result
-        buy = power(a[-5:])
-        prior = power(a[-10:-5])
+        if self.cfg.power_mode == "atr":
+            buy, prior = atr_normalized_power(a, self.cfg.atr_period,
+                                               self.cfg.atr_floor)
+        else:
+            buy = power(a[-5:])
+            prior = power(a[-10:-5])
         accel = buy-prior
         sell = 100-buy
         sell_accel = prior-buy
