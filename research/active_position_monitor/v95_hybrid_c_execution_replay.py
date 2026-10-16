@@ -13,6 +13,7 @@ from statistics import mean
 from datetime import datetime, timezone
 from pathlib import Path
 from research.active_position_monitor.v95_hybrid_c_research import HybridC, Config
+from research.active_position_monitor.v95_hybrid_c21 import C21Confirm, bearish_reentry_structure
 
 EXIT = {"ADAPTIVE_EXIT", "EARLY_PROFIT_EXIT"}
 REJECT = "FALSE_REVERSAL_HOLD"
@@ -57,6 +58,7 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0,
     last_exit=None
     events=[]
     candidate=None
+    c21=C21Confirm()
     history=[]
     active=entry_time is None
     for index,(minute,bar) in enumerate(rows):
@@ -96,6 +98,9 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0,
         # No trading during unknown initial position history: this is a scenario.
         decision=model.on_completed_m1(bar)
         action=decision["action"]
+        if variant=="C21" and action=="REENTRY_CANDIDATE" and not bearish_reentry_structure(bar,history[-6:-1]):
+            action="WAIT_REENTRY"
+            events.append({"time":timestamp,"action":"C21_REENTRY_REJECTED_STRUCTURE"})
         if action in EXIT or action in (REJECT,"PROTECTIVE_SL","PROTECTIVE_TP","INCONCLUSIVE_SL_TP_ORDER","REENTRY_CANDIDATE"):
             events.append({"time":timestamp,"action":action,"r_reference":decision.get("r_reference")})
         if action.startswith("PROTECTIVE_") or action=="INCONCLUSIVE_SL_TP_ORDER":
@@ -112,6 +117,14 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0,
             if variant=="C1":
                 if action in EXIT and index+1<len(rows):
                     pending={"kind":"exit","signal":timestamp}
+            elif variant=="C21":
+                previous=history[-2] if len(history)>1 else None
+                status=c21.observe(minute,bar,previous,action,history[-6:-1])
+                if status=="CONFIRM" and index+1<len(rows):
+                    pending={"kind":"exit","signal":timestamp}
+                    events.append({"time":timestamp,"action":"C21_CONFIRMED_EXIT"})
+                elif status=="CANCEL":
+                    events.append({"time":timestamp,"action":"C21_CANCELLED_EXIT"})
             else:
                 if action==REJECT:
                     candidate=None
@@ -161,7 +174,7 @@ def main():
     print("RESEARCH ONLY: paper fill simulation; verify original entry timestamp.")
     print("No live orders; costs only if supplied; no economic-event feed.")
     print("Power mode:",args.power_mode,"RSI confirmation:",args.rsi_confirmation)
-    for variant in ("C1","C2"):
+    for variant in ("C1","C2","C21"):
         result=replay(rows,variant,cost=args.cost_per_oz,entry_time=entry_time,min_stop_atr=args.min_stop_atr,power_mode=args.power_mode,rsi_confirmation=args.rsi_confirmation)
         print("\n",variant,"status:",result["status"])
         for trade in result["trades"]: print("TRADE",trade)
