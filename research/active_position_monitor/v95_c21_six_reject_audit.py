@@ -8,7 +8,32 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime,timezone
-from research.active_position_monitor.v95_c21_episode_comparison import load_m1,episodes,EXIT
+from research.active_position_monitor.v95_m5_history_scan import minute_epoch
+from research.active_position_monitor.v95_m5_exit_challenger import assess
+import sqlite3
+
+EXIT={"ADAPTIVE_EXIT","EARLY_PROFIT_EXIT"}
+def load_m1(path):
+    with sqlite3.connect(Path(path).resolve().as_uri()+"?mode=ro",uri=True) as con:
+        rows=con.execute('SELECT minute,"open",high,low,"close" FROM candles ORDER BY minute').fetchall()
+    result={}
+    for t,o,h,l,c in rows:
+        m=minute_epoch(t)
+        if m in result:raise ValueError("Duplicate M1")
+        result[m]={"o":float(o),"h":float(h),"l":float(l),"c":float(c)}
+    return result
+
+def episodes(m5):
+    candidates=[]
+    for bucket in sorted(m5):
+        if all(t in m5 for t in range(bucket-15,bucket+1)):
+            if assess([m5[t] for t in range(bucket-15,bucket+1)]).action=="EXIT_CANDIDATE":
+                candidates.append(bucket)
+    groups=[]
+    for bucket in candidates:
+        if not groups or bucket!=groups[-1][-1]+1:groups.append([bucket])
+        else:groups[-1].append(bucket)
+    return groups
 from research.active_position_monitor.v95_m5_reversal_study import load_m5
 from research.active_position_monitor.v95_hybrid_c_research import HybridC,Config
 from research.active_position_monitor.v95_hybrid_c21 import C21Confirm
