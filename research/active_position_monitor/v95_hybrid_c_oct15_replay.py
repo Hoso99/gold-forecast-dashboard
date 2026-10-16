@@ -24,7 +24,7 @@ def main():
         rows=con.execute("""
             SELECT minute, open, high, low, close FROM candles
             WHERE minute >= '2026-10-15T15:00:00'
-              AND minute < '2026-10-15T18:00:00'
+              AND minute < '2026-10-15T17:55:00'
             ORDER BY minute
         """).fetchall()
     bars={}
@@ -40,7 +40,7 @@ def main():
             raise SystemExit("Duplicate M1")
         bars[key]={"o":o,"h":h,"l":l,"c":c}
     start=int(datetime(2026,10,15,15,0,tzinfo=timezone.utc).timestamp()//60)
-    end=int(datetime(2026,10,15,18,0,tzinfo=timezone.utc).timestamp()//60)
+    end=int(datetime(2026,10,15,17,55,tzinfo=timezone.utc).timestamp()//60)
     missing=[k for k in range(start,end) if k not in bars]
     if missing:
         raise SystemExit(f"INCOMPLETE_M1: {len(missing)} missing minutes; no result")
