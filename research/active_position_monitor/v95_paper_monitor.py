@@ -397,7 +397,7 @@ def evaluate(rows,state,news_context=None):
     # on calendar availability. Missing or unverified context fails closed.
     if os.getenv("V95_NEWS_GATE_ENABLED","1")=="1":
         news_risk=(news_context or {}).get("risk","UNKNOWN")
-        if news_risk not in ("NORMAL","BUILDING"):
+        if news_risk != "NORMAL":
             events=(news_context or {}).get("events",[])
             event_name=next((x.get("name","USD event") for x in events
                              if -15<=x.get("minutes_to_event",999)<=30),"")
@@ -507,12 +507,9 @@ def cycle():
     # A calendar failure must not prevent SL/TP and early-exit evaluation.
     if os.getenv("V95_NEWS_GATE_ENABLED","1")=="1":
         try:
-            if os.getenv("V95_MARKET_DATA_SOURCE", "BIQUOTE").upper() == "TWELVE_DATA":
-                # No unverified replacement calendar: preserve fail-closed news gate.
-                news_context={"risk":"UNKNOWN","source":"NO_VALIDATED_CALENDAR"}
-            else:
-                from v95_biquote import fetch_calendar_context
-                news_context=fetch_calendar_context()
+            # Calendar source is independent of Twelve Data market candles.
+            from v95_biquote import fetch_calendar_context
+            news_context=fetch_calendar_context()
         except Exception as exc:
             news_context={"risk":"UNKNOWN","error_type":type(exc).__name__}
     else:
