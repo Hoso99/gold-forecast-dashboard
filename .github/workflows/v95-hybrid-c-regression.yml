@@ -1,0 +1,22 @@
+name: V9.5 Hybrid C isolated regression
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/v95-m5-exit-challenger-20261015
+    paths:
+      - 'research/active_position_monitor/v95_hybrid_c_research.py'
+      - 'research/active_position_monitor/test_v95_hybrid_c_research.py'
+      - '.github/workflows/v95-hybrid-c-regression.yml'
+permissions:
+  contents: read
+jobs:
+  hybrid-c-synthetic:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Synthetic tests only (no private market database)
+        run: python3 -m unittest -v research.active_position_monitor.test_v95_hybrid_c_research
