@@ -9,6 +9,7 @@ confirms earlier. The next-open fill may differ from signal close.
 """
 import argparse
 import sqlite3
+from statistics import mean
 from datetime import datetime, timezone
 from pathlib import Path
 from research.active_position_monitor.v95_hybrid_c_research import HybridC
@@ -34,10 +35,20 @@ def load(db, start, end):
     if missing: raise ValueError(f"{len(missing)} missing M1 candles; replay refused")
     return [(m,bars[m]) for m in range(start_min,end_min)]
 
-def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0):
+def atr(bars, n=14):
+    if len(bars)<n+1: return None
+    trs=[]
+    for previous,current in zip(bars[-n-1:-1],bars[-n:]):
+        trs.append(max(current["h"]-current["l"],
+                       abs(current["h"]-previous["c"]),
+                       abs(current["l"]-previous["c"])))
+    return mean(trs)
+
+def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0,
+           entry_time=None, min_stop_atr=1.5):
     model=HybridC()
     model.cfg.cost_per_oz=cost
-    model.open_initial(entry,stop,target)
+    if entry_time is None: model.open_initial(entry,stop,target)
     trades=[]
     pending=None
     current_entry=entry
@@ -45,7 +56,19 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0):
     current_target=target
     last_exit=None
     events=[]
+    candidate=None
+    history=[]
+    active=entry_time is None
     for index,(minute,bar) in enumerate(rows):
+        history.append(bar)
+        if entry_time is not None and not active:
+            if minute < entry_time:
+                model.on_completed_m1(bar)
+                continue
+            active=True
+            # The initial SELL is activated only at its supplied verified time.
+            # Pre-entry history is available to indicators, but no exit allowed.
+            model.open_initial(entry,stop,target)
         timestamp=datetime.fromtimestamp((minute+1)*60,timezone.utc).isoformat()
         # Pending discretionary orders fill at this M1 OPEN, before evaluating bar.
         if pending is not None and model.position is not None:
@@ -60,13 +83,15 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0):
         elif pending is not None and model.position is None:
             price=bar["o"]
             stop_ref=pending["stop"]
-            if price < stop_ref and model.reentry_left>0:
+            volatility=atr(history[:-1])
+            if (volatility is not None and price < stop_ref and model.reentry_left>0
+                    and stop_ref-price >= min_stop_atr*volatility):
                 target_ref=price-2*(stop_ref-price)
                 model.confirm_paper_reentry(price,stop_ref,target_ref)
                 current_entry,current_stop,current_target=price,stop_ref,target_ref
                 trades.append({"type":"REENTRY","signal":pending["signal"],"fill_minute":minute,"price":round(price,5),"stop":round(stop_ref,5),"target":round(target_ref,5)})
             else:
-                events.append({"time":timestamp,"action":"REENTRY_CANCELLED_GAP_OR_WINDOW"})
+                events.append({"time":timestamp,"action":"REENTRY_CANCELLED_STOP_ATR_OR_GAP"})
             pending=None
         # No trading during unknown initial position history: this is a scenario.
         decision=model.on_completed_m1(bar)
@@ -101,7 +126,14 @@ def replay(rows,variant,entry=4144.57,stop=4174.64,target=4084.43,cost=0.0):
                             pending={"kind":"exit","signal":timestamp}
                         candidate=None
         elif action=="REENTRY_CANDIDATE" and index+1<len(rows):
-            pending={"kind":"reentry","signal":timestamp,"stop":decision["stop_reference"]}
+            volatility=atr(history)
+            proposed_risk=decision["stop_reference"]-decision["entry_reference"]
+            if volatility is not None and proposed_risk>=min_stop_atr*volatility:
+                pending={"kind":"reentry","signal":timestamp,"stop":decision["stop_reference"]}
+            else:
+                events.append({"time":timestamp,"action":"REENTRY_REJECTED_ATR",
+                               "risk":round(proposed_risk,5),
+                               "min_risk":round(min_stop_atr*volatility,5) if volatility else None})
     return {"variant":variant,"status":"END_OF_DATA","trades":trades,"events":events}
 
 def main():
@@ -110,13 +142,24 @@ def main():
     parser.add_argument("--start",default="2026-10-15T15:00:00+00:00")
     parser.add_argument("--end",default="2026-10-15T17:55:00+00:00")
     parser.add_argument("--cost-per-oz",type=float,default=0.0)
+    parser.add_argument("--entry-time",help="verified UTC ISO timestamp of original SELL entry")
+    parser.add_argument("--min-stop-atr",type=float,default=1.5)
     args=parser.parse_args()
     if args.cost_per_oz<0: parser.error("cost cannot be negative")
+    if args.min_stop_atr<=0: parser.error('min-stop-atr must be positive')
     rows=load(args.db,args.start,args.end)
-    print("SCENARIO: SELL assumed open at start; original entry timestamp unverified.")
+    entry_time=None
+    if args.entry_time:
+        dt=datetime.fromisoformat(args.entry_time.replace('Z','+00:00'))
+        if dt.tzinfo is None: parser.error('entry-time must include timezone')
+        entry_time=int(dt.astimezone(timezone.utc).timestamp()//60)
+        if not rows[0][0]<=entry_time<=rows[-1][0]: parser.error('entry-time outside replay')
+    else:
+        print('WARNING: no verified entry timestamp; scenario only')
+    print("RESEARCH ONLY: paper fill simulation; verify original entry timestamp.")
     print("No live orders; costs only if supplied; no economic-event feed.")
     for variant in ("C1","C2"):
-        result=replay(rows,variant,cost=args.cost_per_oz)
+        result=replay(rows,variant,cost=args.cost_per_oz,entry_time=entry_time,min_stop_atr=args.min_stop_atr)
         print("\n",variant,"status:",result["status"])
         for trade in result["trades"]: print("TRADE",trade)
         for event in result["events"]: print("EVENT",event)
