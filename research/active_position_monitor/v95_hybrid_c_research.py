@@ -15,6 +15,10 @@ class Config:
     power_mode: str = "raw"
     atr_period: int = 14
     atr_floor: float = 1e-8
+    rsi_confirmation: bool = False
+    rsi_period: int = 14
+    rsi_warning_floor: float = 55.0
+    rsi_strong_floor: float = 60.0
     early_buy_power: float = 58.0
     strong_buy_power: float = 72.0
     min_accel_pp: float = 12.0
@@ -70,6 +74,24 @@ def atr_normalized_power(bars, period=14, floor=1e-8):
         return 100*up/(up+down) if up+down else 50.
     return ratio(weighted[-5:]), ratio(weighted[-10:-5])
 
+def rsi_wilder(bars, period=14):
+    """Causal Wilder RSI of completed M1 closes; None until warm."""
+    if period < 2 or len(bars) < period+1:
+        return None
+    closes=[b["c"] for b in bars]
+    deltas=[b-a for a,b in zip(closes,closes[1:])]
+    gains=[max(d,0.0) for d in deltas]
+    losses=[max(-d,0.0) for d in deltas]
+    avg_gain=sum(gains[:period])/period
+    avg_loss=sum(losses[:period])/period
+    for gain,loss in zip(gains[period:],losses[period:]):
+        avg_gain=(avg_gain*(period-1)+gain)/period
+        avg_loss=(avg_loss*(period-1)+loss)/period
+    if avg_gain==0 and avg_loss==0: return 50.0
+    if avg_loss==0: return 100.0
+    if avg_gain==0: return 0.0
+    return 100-100/(1+avg_gain/avg_loss)
+
 def check(bar):
     b = {k: float(bar[k]) for k in ("o","h","l","c")}
     if not b["l"] <= min(b["o"],b["c"]) <= max(b["o"],b["c"]) <= b["h"]:
@@ -122,6 +144,8 @@ class HybridC:
         if self.cfg.power_mode not in ("raw", "atr"):
             raise ValueError("power_mode must be raw or atr")
         needed = 11 if self.cfg.power_mode == "raw" else self.cfg.atr_period + 10
+        if self.cfg.rsi_confirmation:
+            needed=max(needed,self.cfg.rsi_period+1)
         if len(a) < needed:
             return result
         if self.cfg.power_mode == "atr":
@@ -154,9 +178,12 @@ class HybridC:
             unrealized = p.r(b["c"], self.cfg.cost_per_oz)
             p.peak_r = max(p.peak_r, p.r(b["l"], self.cfg.cost_per_oz))
             giveback = p.peak_r-unrealized
-            warning = buy >= self.cfg.early_buy_power and accel >= self.cfg.min_accel_pp
+            rsi = rsi_wilder(a,self.cfg.rsi_period) if self.cfg.rsi_confirmation else None
+            rsi_warning_ok = not self.cfg.rsi_confirmation or (rsi is not None and rsi >= self.cfg.rsi_warning_floor)
+            rsi_strong_ok = not self.cfg.rsi_confirmation or (rsi is not None and rsi >= self.cfg.rsi_strong_floor)
+            warning = buy >= self.cfg.early_buy_power and accel >= self.cfg.min_accel_pp and rsi_warning_ok
             strong = (buy >= self.cfg.strong_buy_power and
-                      accel >= self.cfg.strong_accel_pp and bullish_break)
+                      accel >= self.cfg.strong_accel_pp and bullish_break and rsi_strong_ok)
             # False-reversal detector: causal, time-limited, two-of-three vote.
             # Anchor is the resistance broken by a bullish close, fixed at the
             # moment of that break; never updated with later price information.
@@ -182,7 +209,7 @@ class HybridC:
             profit_watch = unrealized >= self.cfg.profit_watch_r and (warning or giveback >= self.cfg.giveback_r)
             profit_exit = (unrealized > 0 and p.peak_r >= self.cfg.profit_watch_r
                            and giveback >= self.cfg.giveback_r
-                           and (warning or bullish_break))
+                           and (warning or (bullish_break and rsi_strong_ok)))
             if rejected:
                 self.pending = 0
             elif warning:
@@ -213,7 +240,8 @@ class HybridC:
                           "giveback_r":round(giveback,4)}
             elif warning:
                 result = {"action":"REVERSAL_WARNING", "buy_power":round(buy,2),
-                          "acceleration_pp":round(accel,2)}
+                          "acceleration_pp":round(accel,2),
+                          "rsi":round(rsi,2) if rsi is not None else None}
             else:
                 result = {"action":"HOLD", "r_reference":round(unrealized,4)}
         elif self.reentry_left > 0:
