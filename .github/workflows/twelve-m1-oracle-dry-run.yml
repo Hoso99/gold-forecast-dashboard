@@ -1,0 +1,36 @@
+name: Twelve Data M1 Archive - Oracle Dry Run
+
+on:
+  push:
+    branches:
+      - research/twelve-m1-archive-20261017
+    paths:
+      - '.github/workflows/twelve-m1-oracle-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oracle-dry-run:
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 5
+    steps:
+      - name: Check out isolated research branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Show runner identity without credentials
+        shell: bash
+        run: |
+          echo "Runner: ${RUNNER_NAME}"
+          echo "OS: ${RUNNER_OS}"
+          echo "Repository: ${GITHUB_REPOSITORY}"
+          echo "Branch: ${GITHUB_REF_NAME}"
+          python3 --version
+      - name: Compile historical downloader
+        shell: bash
+        run: python3 -m py_compile research/historical/twelve_m1_backfill.py
+      - name: Dry run - no network and no database writes
+        shell: bash
+        run: python3 research/historical/twelve_m1_backfill.py
