@@ -96,9 +96,23 @@ def main():
             duplicates = con.execute("SELECT COUNT(*) - COUNT(DISTINCT minute_utc) FROM candles").fetchone()[0]
             invalid = con.execute("SELECT COUNT(*) FROM candles WHERE low > high OR open < low OR open > high OR close < low OR close > high").fetchone()[0]
             print("AUDIT candles:", n, "first:", first, "last:", last)
-            print("AUDIT windows:", w, "reported rows:", total, "duplicates:", duplicates, "invalid OHLC:", invalid)
-            if duplicates or invalid or n != total:
-                raise RuntimeError("archive audit failed")
+            covered = con.execute("""
+                SELECT COUNT(*) FROM candles c WHERE EXISTS (
+                    SELECT 1 FROM completed_windows w
+                    WHERE w.start_utc <= c.minute_utc AND c.minute_utc < w.end_utc
+                )
+            """).fetchone()[0]
+            overlap = con.execute("""
+                SELECT COUNT(*) FROM candles c WHERE (
+                    SELECT COUNT(*) FROM completed_windows w
+                    WHERE w.start_utc <= c.minute_utc AND c.minute_utc < w.end_utc
+                ) > 1
+            """).fetchone()[0]
+            print("AUDIT windows:", w, "reported rows:", total,
+                  "overlap candles:", overlap, "covered unique:", covered,
+                  "duplicates:", duplicates, "invalid OHLC:", invalid)
+            if duplicates or invalid or covered != n or total - overlap != n:
+                raise RuntimeError("archive audit failed: coverage or accounting mismatch")
         finally:
             con.close()
         return
@@ -123,12 +137,24 @@ def main():
         cursor = start
         requests = 0
         while cursor < end:
-            stop = min(cursor + timedelta(minutes=args.window_minutes), end)
-            a, b = cursor.strftime(FMT), stop.strftime(FMT)
-            if con.execute("SELECT 1 FROM completed_windows WHERE start_utc=? AND end_utc=?", (a,b)).fetchone():
-                print("SKIP:", a, b)
-                cursor = stop
+            # Resume from union of completed intervals, regardless of requested end.
+            covering = con.execute(
+                "SELECT MAX(end_utc) FROM completed_windows WHERE start_utc <= ? AND end_utc > ?",
+                (cursor.strftime(FMT), cursor.strftime(FMT)),
+            ).fetchone()[0]
+            if covering:
+                print("SKIP COVERED:", cursor.strftime(FMT), covering)
+                cursor = min(dt(covering), end)
                 continue
+            stop = min(cursor + timedelta(minutes=args.window_minutes), end)
+            # Never create a window that overlaps a later completed checkpoint.
+            next_start = con.execute(
+                "SELECT MIN(start_utc) FROM completed_windows WHERE start_utc > ? AND start_utc < ?",
+                (cursor.strftime(FMT), stop.strftime(FMT)),
+            ).fetchone()[0]
+            if next_start:
+                stop = dt(next_start)
+            a, b = cursor.strftime(FMT), stop.strftime(FMT)
             if requests >= args.max_requests:
                 print("STOP: request limit")
                 break
