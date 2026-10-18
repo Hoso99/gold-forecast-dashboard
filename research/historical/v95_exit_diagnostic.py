@@ -10,21 +10,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO='Hoso99/gold-forecast-dashboard'
-ARTIFACT_ID=12130412594
-URL=f'https://api.github.com/repos/{REPO}/actions/artifacts/{ARTIFACT_ID}/zip'
-token=os.environ['GITHUB_TOKEN']
-req=urllib.request.Request(URL,headers={
-    'Authorization':f'Bearer {token}',
-    'Accept':'application/vnd.github+json',
-    'X-GitHub-Api-Version':'2022-11-28',
-    'User-Agent':'v95-research-diagnostics'})
-with urllib.request.urlopen(req,timeout=60) as response:
-    data=response.read()
-with zipfile.ZipFile(io.BytesIO(data)) as z:
-    members=[x for x in z.namelist() if x.endswith('v95-m1-paper-approx-results.json')]
-    if len(members)!=1:raise RuntimeError('Expected one replay report in artifact')
-    report=json.loads(z.read(members[0]))
+# The prior workflow artifact is downloaded by actions/download-artifact into
+# this job's isolated workspace; no token or network access in this script.
+report=json.loads(Path('source-replay/v95-m1-paper-approx-results.json').read_text())
 trades=report['trades']
 completed=[x for x in trades if 'net_r' in x]
 if len(completed)!=1196:raise RuntimeError('Unexpected replay artifact trade count')
