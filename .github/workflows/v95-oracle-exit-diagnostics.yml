@@ -1,0 +1,26 @@
+name: V9.5 Fast Exit Diagnostics Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Analyze historical research report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 research/historical/v95_exit_diagnostic.py
+      - name: Upload analysis summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-exit-diagnostic-${{ github.run_id }}
+          path: v95-exit-diagnostic-report.json
+          if-no-files-found: warn
+          retention-days: 14
