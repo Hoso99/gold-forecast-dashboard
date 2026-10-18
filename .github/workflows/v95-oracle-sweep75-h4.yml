@@ -1,0 +1,36 @@
+name: V9.5 Sweep75 H4 Confirmation Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v95-h4-confirmation-research
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Verify isolated research scripts
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py research/historical/v95_sweep75_h4_research.py
+      - name: Compare Sweep75 against H4-confirmed challenger
+        run: python3 research/historical/v95_sweep75_h4_research.py
+      - name: Upload research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-sweep75-h4-${{ github.run_id }}
+          path: v95-sweep75-h4-report.json
+          if-no-files-found: warn
+          retention-days: 14
