@@ -1,0 +1,65 @@
+name: V9.5 Oracle Historical Read-Only Verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-oracle-historical-readonly-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Verify historical data and V9.5 research code
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - name: Read-only SQLite and code checks (no checkout, no secrets)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import sqlite3
+          from pathlib import Path
+          from urllib.parse import quote
+
+          base = Path('/home/ubuntu/v95-historical-research')
+          names = [
+              'twelve_xauusd_m1.sqlite3',
+              'twelve_xauusd_m1_2021_2022.sqlite3',
+              'twelve_xauusd_m1_2022_2023.sqlite3',
+              'twelve_xauusd_m1_2023_2024.sqlite3',
+              'twelve_xauusd_m1_2024_2025.sqlite3',
+              'twelve_xauusd_m1_2025_2026.sqlite3',
+              'twelve_xauusd_m1_2026_partial.sqlite3',
+          ]
+          print('V9.5 ORACLE HISTORICAL VERIFICATION - READ ONLY')
+          print('Runner account database access and source code availability:')
+          total = 0
+          for name in names:
+              path = base / name
+              if not path.is_file():
+                  print(f'{name}: MISSING_OR_NOT_ACCESSIBLE')
+                  continue
+              try:
+                  uri = 'file:' + quote(str(path), safe='/') + '?mode=ro&immutable=1'
+                  with sqlite3.connect(uri, uri=True, timeout=5) as conn:
+                      conn.execute('PRAGMA query_only=ON')
+                      columns = [row[1] for row in conn.execute('PRAGMA table_info(candles)')]
+                      count, first, last = conn.execute(
+                          'SELECT COUNT(*), MIN(minute_utc), MAX(minute_utc) FROM candles'
+                      ).fetchone()
+                  total += count
+                  print(f'{name}: rows={count}, first={first}, last={last}, columns={columns}')
+              except (sqlite3.Error, OSError) as exc:
+                  print(f'{name}: READ_ERROR ({type(exc).__name__})')
+          print(f'TOTAL_ACCESSIBLE_M1_CANDLES={total}')
+          root = Path('/home/ubuntu/v95-research/research/active_position_monitor')
+          for name in ['v95_paper_monitor.py', 'v95_gap_aware_gate.py',
+                       'v95_core_sell_detectors.py', 'v95_biquote.py']:
+              path = root / name
+              try:
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  print(f'CODE {name}: present sha256={digest}')
+              except OSError as exc:
+                  print(f'CODE {name}: UNAVAILABLE ({type(exc).__name__})')
+          print('READ_ONLY_VERIFICATION_COMPLETE')
+          PY
