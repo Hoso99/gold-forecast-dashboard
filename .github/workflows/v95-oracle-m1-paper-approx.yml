@@ -1,0 +1,28 @@
+name: V9.5 Fast M1 Paper Approximation (Research Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-m1-paper-approx
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile isolated research code
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py
+      - name: Run fast historical M1 V9.5 paper approximation
+        run: python3 research/historical/v95_m1_paper_approx.py
+      - name: Upload diagnostic results only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-m1-paper-approx-${{ github.run_id }}
+          path: v95-m1-paper-approx-results.json
+          if-no-files-found: warn
+          retention-days: 14
