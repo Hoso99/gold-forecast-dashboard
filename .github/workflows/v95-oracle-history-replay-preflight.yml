@@ -1,0 +1,93 @@
+name: V9.5 Historical Replay Preflight (Research Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-oracle-history-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 20
+    steps:
+      - name: Analyze historical M1 continuity without changing databases
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import sqlite3
+          from collections import Counter
+          from pathlib import Path
+          from urllib.parse import quote
+
+          root = Path('/home/ubuntu/v95-historical-research')
+          names = [
+              'twelve_xauusd_m1.sqlite3',
+              'twelve_xauusd_m1_2021_2022.sqlite3',
+              'twelve_xauusd_m1_2022_2023.sqlite3',
+              'twelve_xauusd_m1_2023_2024.sqlite3',
+              'twelve_xauusd_m1_2024_2025.sqlite3',
+              'twelve_xauusd_m1_2025_2026.sqlite3',
+              'twelve_xauusd_m1_2026_partial.sqlite3',
+          ]
+          report = {'purpose':'research-only historical replay preflight',
+                    'database_mode':'SQLite mode=ro&immutable=1, query_only',
+                    'historical_calendar':'NOT_VERIFIED',
+                    'entry_backtest':'NOT_RUN',
+                    'files':[], 'totals':{}}
+          total = Counter()
+          previous = None
+          for name in names:
+              path = root / name
+              stats = Counter()
+              aligned = {5:None, 15:None, 60:None, 240:None}
+              first = last = None
+              uri = 'file:' + quote(str(path),safe='/') + '?mode=ro&immutable=1'
+              with sqlite3.connect(uri,uri=True) as conn:
+                  conn.execute('PRAGMA query_only=ON')
+                  for stamp, op, hi, lo, close in conn.execute(
+                      'SELECT minute_utc,open,high,low,close FROM candles ORDER BY minute_utc'):
+                      t = dt.datetime.fromisoformat(stamp)
+                      if first is None: first=stamp
+                      last=stamp
+                      stats['rows']+=1
+                      if previous is not None:
+                          gap=int((t-previous).total_seconds()//60)
+                          if gap==1: stats['contiguous_links']+=1
+                          elif gap>1: stats['positive_gaps']+=1
+                          else: stats['nonmonotonic_or_overlap']+=1
+                      previous=t
+                      if not (lo<=op<=hi and lo<=close<=hi):
+                          stats['invalid_ohlc']+=1
+                      for width in (5,15,60,240):
+                          start=t.replace(hour=0,minute=0,second=0,microsecond=0)+dt.timedelta(
+                              minutes=((t.hour*60+t.minute)//width)*width)
+                          state=aligned[width]
+                          if state is None or state[0]!=start:
+                              if state is not None and state[1]==width and state[2]:
+                                  stats[f'complete_m{width}']+=1
+                              aligned[width]=[start,1,t==start]
+                          else:
+                              state[2]=state[2] and (t==start+dt.timedelta(minutes=state[1]))
+                              state[1]+=1
+              for width,state in aligned.items():
+                  if state is not None and state[1]==width and state[2]:
+                      stats[f'complete_m{width}']+=1
+              item={'database':name,'first_utc':first,'last_utc':last,**dict(stats)}
+              report['files'].append(item)
+              total.update(stats)
+              print(json.dumps(item,sort_keys=True),flush=True)
+          report['totals']=dict(total)
+          out=Path('v95-history-preflight-report.json')
+          out.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print('TOTALS '+json.dumps(report['totals'],sort_keys=True))
+          print('NO STRATEGY BACKTEST OR CALENDAR VALIDATION WAS PERFORMED')
+          PY
+      - name: Upload summary report only
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-history-preflight-${{ github.run_id }}
+          path: v95-history-preflight-report.json
+          retention-days: 14
