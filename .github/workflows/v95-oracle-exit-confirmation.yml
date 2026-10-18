@@ -1,0 +1,28 @@
+name: V9.5 Sweep75 Exit Confirmation Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-sweep75-exit-confirmation
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile research scripts
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py research/historical/v95_exit_confirmation_research.py
+      - name: Run three chronological exit policies
+        run: python3 research/historical/v95_exit_confirmation_research.py
+      - name: Upload exit comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-exit-confirmation-${{ github.run_id }}
+          path: v95-exit-confirmation-research.json
+          if-no-files-found: warn
+          retention-days: 14
