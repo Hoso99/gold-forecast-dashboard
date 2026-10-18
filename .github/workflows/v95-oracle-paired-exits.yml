@@ -1,0 +1,37 @@
+name: V9.5 Paired Historical Exit Comparison
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v95-paired-exits-research
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download frozen V9.5 entry cohort
+        uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Compile research script
+        run: python3 -m py_compile research/historical/v95_paired_exit_comparison.py
+      - name: Compare recorded exits to fixed-cohort SL/TP alternative
+        run: python3 research/historical/v95_paired_exit_comparison.py
+      - name: Upload paired diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-paired-exits-${{ github.run_id }}
+          path: v95-paired-exits-report.json
+          if-no-files-found: warn
+          retention-days: 14
