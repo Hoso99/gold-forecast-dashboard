@@ -1,0 +1,31 @@
+name: V9.5 Entry Filter Exploratory Research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Evaluate entry filters against frozen research entries
+        run: python3 research/historical/v95_entry_filter_exploratory.py
+      - name: Upload full research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-entry-filter-exploratory-${{ github.run_id }}
+          path: v95-entry-filter-exploratory.json
+          if-no-files-found: warn
+          retention-days: 14
