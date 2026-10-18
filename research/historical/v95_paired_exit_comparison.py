@@ -51,8 +51,10 @@ def run():
         for trade in rows:
             entry_t=dt.datetime.fromisoformat(trade['entry_utc']).replace(tzinfo=None)
             # Source timestamps are naive ISO UTC, preserving source lexical format.
-            start=(entry_t+ONE).isoformat()
-            end=(entry_t+dt.timedelta(minutes=MAX_HOLD)).isoformat()
+            # SQLite minute_utc keys use 'YYYY-MM-DD HH:MM:SS', not ISO 'T'.
+            # Keep indexed lexical range queries against the native UTC key format.
+            start=(entry_t+ONE).strftime('%Y-%m-%d %H:%M:%S')
+            end=(entry_t+dt.timedelta(minutes=MAX_HOLD)).strftime('%Y-%m-%d %H:%M:%S')
             entry=float(trade['entry']);risk=float(trade['risk'])
             stop=float(trade['stop']);target=float(trade['target'])
             path=[]
