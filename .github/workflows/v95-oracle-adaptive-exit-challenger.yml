@@ -1,0 +1,29 @@
+name: V9.5 Adaptive Exit Challenger (Research Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-adaptive-exit-challenger
+  cancel-in-progress: false
+jobs:
+  adaptive:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-adaptive-exit-challenger-20261018
+          persist-credentials: false
+      - name: Validate isolated research
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py research/historical/v95_adaptive_exit_challenger.py
+      - name: Run fixed-entry original, strict and adaptive exit comparison
+        run: python3 research/historical/v95_adaptive_exit_challenger.py
+      - name: Upload detailed results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-adaptive-exit-challenger-${{ github.run_id }}
+          path: v95-adaptive-exit-challenger.json
+          if-no-files-found: warn
+          retention-days: 14
