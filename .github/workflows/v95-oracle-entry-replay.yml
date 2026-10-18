@@ -1,0 +1,27 @@
+name: V9.5 Historical Technical SELL Replay (Research Only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-oracle-technical-entry-replay
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run isolated seven-database historical technical-entry baseline
+        shell: bash
+        run: python3 research/historical/v95_entry_replay.py
+      - name: Upload replay report (no database exports)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-technical-entry-replay-${{ github.run_id }}
+          path: v95-entry-replay-results.json
+          if-no-files-found: warn
+          retention-days: 14
