@@ -61,11 +61,11 @@ def adaptive(trade):
             db.execute("PRAGMA query_only=ON")
             rows = db.execute(
                 "SELECT minute_utc,open,high,low,close FROM candles WHERE minute_utc>=? AND minute_utc<=? ORDER BY minute_utc",
-                (begin.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S"))
+                (begin.date().isoformat(), (end.date()+dt.timedelta(days=1)).isoformat())
             )
             for stamp,o,h,l,c in rows:
                 t = dt.datetime.fromisoformat(stamp).replace(tzinfo=UTC)
-                bars.append((t,o,h,l,c))
+                if begin <= t <= end:\n                    bars.append((t,o,h,l,c))
     bars.sort(key=lambda x:x[0])
     aggs = {n:{"part":None,"bars":collections.deque(maxlen=25)} for n in (5,15,60,240)}
     last = None
