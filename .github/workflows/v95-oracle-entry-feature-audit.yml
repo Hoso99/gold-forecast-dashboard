@@ -1,0 +1,40 @@
+name: V9.5 Entry Feature Availability Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Audit pre-entry features and cohort completeness
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,collections
+          from pathlib import Path
+          src=json.loads(Path('source-replay/v95-m1-paper-approx-results.json').read_text())
+          trades=src['trades']
+          print('ENTRY_AUDIT_SOURCE_RUN',39110369114)
+          print('SOURCE_TOP_LEVEL_KEYS',sorted(src.keys()))
+          print('ALL_TRADES',len(trades))
+          print('TRADE_KEYS',sorted(set().union(*(set(t.keys()) for t in trades))))
+          print('DETECTORS',dict(collections.Counter(str(t.get('detector')) for t in trades)))
+          print('YEARS',dict(sorted(collections.Counter(str(t.get('year')) for t in trades).items())))
+          print('OUTCOMES',dict(collections.Counter(str(t.get('outcome')) for t in trades)))
+          print('COMPLETED',sum('net_r' in t for t in trades))
+          for key in sorted(set().union(*(set(t.keys()) for t in trades))):
+              vals=[t[key] for t in trades if key in t]
+              print('FEATURE',key,'coverage',len(vals),'types',dict(collections.Counter(type(v).__name__ for v in vals)),
+                    'sample',repr(vals[0])[:110] if vals else None)
+          print('NO_MARKET_DATA_MODIFIED')
+          PY
