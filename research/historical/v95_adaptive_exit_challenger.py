@@ -65,7 +65,8 @@ def adaptive(trade):
             )
             for stamp,o,h,l,c in rows:
                 t = dt.datetime.fromisoformat(stamp).replace(tzinfo=UTC)
-                if begin <= t <= end:\n                    bars.append((t,o,h,l,c))
+                if begin <= t <= end:
+                    bars.append((t,o,h,l,c))
     bars.sort(key=lambda x:x[0])
     aggs = {n:{"part":None,"bars":collections.deque(maxlen=25)} for n in (5,15,60,240)}
     last = None
