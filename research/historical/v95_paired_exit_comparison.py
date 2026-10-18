@@ -49,7 +49,7 @@ def run():
             start,end=con.execute('SELECT MIN(minute_utc),MAX(minute_utc) FROM candles').fetchone()
             conns.append((start,end,con))
         for trade in rows:
-            entry_t=dt.datetime.fromisoformat(trade['entry_utc'])
+            entry_t=dt.datetime.fromisoformat(trade['entry_utc']).replace(tzinfo=None)
             # Source timestamps are naive ISO UTC, preserving source lexical format.
             start=(entry_t+ONE).isoformat()
             end=(entry_t+dt.timedelta(minutes=MAX_HOLD)).isoformat()
