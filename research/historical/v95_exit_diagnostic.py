@@ -10,6 +10,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+ARTIFACT_ID=12130412594
 # The prior workflow artifact is downloaded by actions/download-artifact into
 # this job's isolated workspace; no token or network access in this script.
 report=json.loads(Path('source-replay/v95-m1-paper-approx-results.json').read_text())
