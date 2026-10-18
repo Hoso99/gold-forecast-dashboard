@@ -1,0 +1,27 @@
+name: V9.5 Original vs C2 Raw Full History
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-original-vs-c2-history
+  cancel-in-progress: false
+jobs:
+  comparison:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-adaptive-exit-challenger-20261018
+          persist-credentials: false
+      - name: Check C2 full-history replay parity
+        run: python3 research/historical/v95_original_vs_c2_parity_gate.py
+      - name: Publish comparison feasibility and source audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-original-vs-c2-full-history-${{ github.run_id }}
+          path: v95-original-vs-c2-full-history.json
+          retention-days: 14
+          if-no-files-found: warn
