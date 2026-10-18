@@ -62,9 +62,11 @@ def run():
                     'SELECT minute_utc,open,high,low,close FROM candles WHERE minute_utc>=? AND minute_utc<=? ORDER BY minute_utc',
                     (start,end)).fetchall())
             path.sort(key=lambda x:x[0])
+            # Candle timestamps are UTC ISO strings; SQLite stores naive UTC.
+            # Normalize both sides to minute-resolution datetimes before comparing.
             outcome='CENSORED_END';gross=None;prev=entry_t
             for index,(stamp,o,h,l,c) in enumerate(path):
-                t=dt.datetime.fromisoformat(stamp)
+                t=dt.datetime.fromisoformat(stamp).replace(tzinfo=None)
                 if t-prev!=ONE:
                     outcome='CENSORED_GAP';break
                 prev=t
@@ -72,7 +74,7 @@ def run():
                     outcome='SL';fill=max(stop,o)
                 elif l<=target:
                     outcome='TP';fill=target
-                elif index+1>=MAX_HOLD:
+                elif (t-entry_t)>=dt.timedelta(minutes=MAX_HOLD):
                     outcome='TIMEOUT';fill=c
                 else:continue
                 gross=(entry-fill)/risk
@@ -87,7 +89,11 @@ def run():
                           'recorded':recorded,'hold':alt})
     finally:
         for _,_,con in conns:con.close()
+    # Fail loudly if the research produces no comparable outcomes.
+    # A successful job with zero pairs is not a valid experiment.
     comparable=[r for r in pairs if r['recorded']['gross_r'] is not None and r['hold']['gross_r'] is not None]
+    if not comparable:
+        raise RuntimeError('ZERO_COMPARABLE_PAIRS: inspect timestamp format and OHLC coverage before analysis')
     def summary(items):
         v=[r['hold']['gross_r']-r['recorded']['gross_r'] for r in items]
         return {'paired_n':len(items),
