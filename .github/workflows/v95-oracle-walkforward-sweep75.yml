@@ -1,0 +1,36 @@
+name: V9.5 Chronological Sweep75 Challenger Replay
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v95-sweep75-chronological-research
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Verify research scripts compile
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py research/historical/v95_walkforward_sweep75.py
+      - name: Replay frozen baseline and sweep75 independently
+        run: python3 research/historical/v95_walkforward_sweep75.py
+      - name: Upload full chronological research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-sweep75-chronological-${{ github.run_id }}
+          path: v95-walkforward-sweep75-report.json
+          if-no-files-found: warn
+          retention-days: 14
