@@ -1,0 +1,23 @@
+name: V9.5 C2 Raw One-Go Decision
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-c2-raw-activation-20261018
+          persist-credentials: false
+      - name: Consolidated original and C2 historical evidence
+        run: python3 research/historical/v95_c2_one_go_decision.py
+      - name: Save decision report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-c2-one-go-decision-${{ github.run_id }}
+          path: v95-c2-one-go-decision.json
+          retention-days: 14
