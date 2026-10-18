@@ -1,0 +1,21 @@
+name: V9.5 Historical Replay Parity Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Audit baseline versus original paper monitor without changing services
+        run: python3 research/historical/v95_parity_audit.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v95-parity-audit-${{ github.run_id }}
+          path: v95-parity-audit.json
+          retention-days: 14
