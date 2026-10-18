@@ -1,0 +1,28 @@
+name: V9.5 Matched Entry Exit Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v95-matched-exit-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate research code
+        run: python3 -m py_compile research/historical/v95_m1_paper_approx.py research/historical/v95_exit_paired_audit.py
+      - name: Compare matched entries and censored outcomes
+        run: python3 research/historical/v95_exit_paired_audit.py
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v95-matched-exit-audit-${{ github.run_id }}
+          path: v95-exit-paired-audit.json
+          if-no-files-found: warn
+          retention-days: 14
