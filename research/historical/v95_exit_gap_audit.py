@@ -43,7 +43,7 @@ def candles(start, end):
             for stamp, o, h, l, c in db.execute(
                 "SELECT minute_utc,open,high,low,close FROM candles "
                 "WHERE minute_utc>=? AND minute_utc<=? ORDER BY minute_utc",
-                (start.date().isoformat(), (end.date()+ONE).isoformat())
+                (start.date().isoformat(), (end.date()+dt.timedelta(days=1)).isoformat())
             ):
                 t = parse(stamp)
                 if start <= t <= end:
