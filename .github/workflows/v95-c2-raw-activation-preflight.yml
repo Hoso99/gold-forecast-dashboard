@@ -1,0 +1,21 @@
+name: V9.5 C2 Raw Activation Preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-c2-raw-activation-20261018
+          persist-credentials: false
+      - name: Inspect C2 and PAPER deployment read-only
+        run: python3 research/historical/v95_c2_activation_preflight.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v95-c2-activation-preflight-${{ github.run_id }}
+          path: v95-c2-activation-preflight.json
+          retention-days: 14
