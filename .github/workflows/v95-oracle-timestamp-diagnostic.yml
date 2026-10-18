@@ -1,0 +1,50 @@
+name: V9.5 Timestamp Matching Diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Compare source timestamps with SQLite keys (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,sqlite3,datetime as dt
+          from pathlib import Path
+          from urllib.parse import quote
+          src=json.loads(Path('source-replay/v95-m1-paper-approx-results.json').read_text())
+          trades=[t for t in src['trades'] if 'entry_utc' in t]
+          print('ENTRY_COUNT',len(trades))
+          for t in trades[:3]:
+              print('ENTRY_SAMPLE',repr(t['entry_utc']),repr(t.get('exit_utc')),t.get('outcome'))
+          base=Path('/home/ubuntu/v95-historical-research')
+          names=['twelve_xauusd_m1.sqlite3','twelve_xauusd_m1_2021_2022.sqlite3','twelve_xauusd_m1_2022_2023.sqlite3','twelve_xauusd_m1_2023_2024.sqlite3','twelve_xauusd_m1_2024_2025.sqlite3','twelve_xauusd_m1_2025_2026.sqlite3','twelve_xauusd_m1_2026_partial.sqlite3']
+          for name in names:
+              p=base/name
+              uri='file:'+quote(str(p),safe='/')+'?mode=ro&immutable=1'
+              with sqlite3.connect(uri,uri=True) as conn:
+                  conn.execute('PRAGMA query_only=ON')
+                  lo,hi=conn.execute('SELECT MIN(minute_utc),MAX(minute_utc) FROM candles').fetchone()
+                  sample=conn.execute('SELECT minute_utc FROM candles ORDER BY minute_utc LIMIT 1').fetchone()
+                  print('DB',name,'MIN',repr(lo),'MAX',repr(hi),'SAMPLE',repr(sample))
+                  for t in trades:
+                      if dt.datetime.fromisoformat(lo)<=dt.datetime.fromisoformat(t['entry_utc']).replace(tzinfo=None)<=dt.datetime.fromisoformat(hi):
+                          stamp=t['entry_utc']
+                          iso=dt.datetime.fromisoformat(stamp).replace(tzinfo=None).isoformat()
+                          print('IN_RANGE_ENTRY',repr(stamp),'QUERY_ISO',repr(iso),
+                                'EXACT_ISO_ROWS',conn.execute('SELECT COUNT(*) FROM candles WHERE minute_utc=?',(iso,)).fetchone()[0],
+                                'DATETIME_MATCH_ROWS',conn.execute('SELECT COUNT(*) FROM candles WHERE datetime(minute_utc)=datetime(?)',(iso,)).fetchone()[0])
+                          break
+          print('TIMESTAMP_DIAGNOSTIC_COMPLETE')
+          PY
