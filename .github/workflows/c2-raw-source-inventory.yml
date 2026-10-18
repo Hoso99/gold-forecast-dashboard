@@ -1,0 +1,24 @@
+name: C2 Raw Research Source Inventory
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: c2-raw-source-inventory
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v95-adaptive-exit-challenger-20261018
+          persist-credentials: false
+      - name: Read-only C2 episode source inventory
+        run: python3 research/historical/c2_raw_source_inventory.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c2-raw-source-inventory-${{ github.run_id }}
+          path: c2-raw-source-inventory.json
+          retention-days: 14
