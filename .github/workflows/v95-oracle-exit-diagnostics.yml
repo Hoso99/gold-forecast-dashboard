@@ -12,9 +12,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Analyze historical research report
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Retrieve frozen prior research artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: v95-m1-paper-approx-39110369114
+          run-id: 39110369114
+          repository: Hoso99/gold-forecast-dashboard
+          github-token: ${{ github.token }}
+          path: source-replay
+      - name: Analyze historical research report locally
         run: python3 research/historical/v95_exit_diagnostic.py
       - name: Upload analysis summary
         if: always()
