@@ -1,0 +1,47 @@
+name: V9.6 isolated research smoke tests
+
+on:
+  push:
+    branches:
+      - research/v96-liquidity-sweep-isolated-20261024
+    paths:
+      - 'research/v96_liquidity_sweep/**'
+      - '.github/workflows/v96-research-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-smoke:
+    name: V9.6 synthetic tests and read-only data inventory
+    runs-on: [self-hosted, Linux, X64, v95-research-only]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify V9.6 synthetic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/v96_liquidity_sweep -p 'test_*.py' -v
+      - name: Check historical data availability (read-only metadata)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          roots = [
+              Path("/home/ubuntu/v95-research"),
+              Path("/home/ubuntu/v95-detector-dev"),
+              Path("/home/ubuntu/v95-private-export"),
+              Path("/tmp/v95-85pct-history-test"),
+              Path("/tmp/v95-liquidity-sweep-research"),
+          ]
+          for root in roots:
+              print(f"RESEARCH_PATH {root}: {'present' if root.exists() else 'absent'}")
+          # No DB reads, no secrets, no writes to any research or live service.
+          print("DATA_INVENTORY: metadata only; no historical backtest yet")
+          PY
