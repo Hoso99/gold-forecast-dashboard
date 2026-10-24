@@ -32,6 +32,9 @@ def evaluate(rows, max_rows=None):
             signal=SweepMSS()
             sweep_high=None
         previous=ts
+        # Keep detector state current even when a simulated trade is open.
+        # No new position is allowed until the existing position resolves.
+        event=signal.update(bar)
         if pending is not None:
             if not trade_bars:
                 # Entry must be the candle AFTER MSS, never the signal close.
@@ -47,7 +50,6 @@ def evaluate(rows, max_rows=None):
                 pending=None
                 trade_bars=[]
             continue
-        event=signal.update(bar)
         if event["event"]=="SWEEP":
             counts["sweeps"]+=1
             sweep_high=max(sweep_high or event["sweep_high"],event["sweep_high"])
