@@ -18,6 +18,7 @@ def evaluate(rows, max_rows=None):
     previous=None
     pending=None
     trade_bars=[]
+    sweep_high=None
     for i,bar in enumerate(rows):
         if max_rows is not None and i>=max_rows:
             break
@@ -29,6 +30,7 @@ def evaluate(rows, max_rows=None):
             pending=None
             trade_bars=[]
             signal=SweepMSS()
+            sweep_high=None
         previous=ts
         if pending is not None:
             if not trade_bars:
@@ -48,11 +50,17 @@ def evaluate(rows, max_rows=None):
         event=signal.update(bar)
         if event["event"]=="SWEEP":
             counts["sweeps"]+=1
+            sweep_high=max(sweep_high or event["sweep_high"],event["sweep_high"])
         if event["event"]=="SELL_CONFIRMED":
             counts["mss"]+=1
-            # Provisional stop: $2 above last observed high, research only.
-            # NOT the agreed final sweep-high/M5-ATR stop methodology.
-            pending={"stop":bar["h"]+2.0}
+            # Baseline only: $2 above retained sweep high; M5 ATR still pending.
+            if sweep_high is None or not (13 <= ts.hour < 17):
+                counts["out_of_session_or_missing_sweep"]+=1
+                continue
+            pending={"stop":max(sweep_high,bar["h"])+2.0}
+            sweep_high=None
+    if pending is not None:
+        counts["unresolved_at_end"]+=1
     return {
         "warning":"UNFILTERED BASELINE ONLY; not validated V9.6 strategy",
         "counts":dict(counts),
