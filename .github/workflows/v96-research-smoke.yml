@@ -45,3 +45,15 @@ jobs:
           # No DB reads, no secrets, no writes to any research or live service.
           print("DATA_INVENTORY: metadata only; no historical backtest yet")
           PY
+      - name: Bounded historical baseline (read-only, first 20000 candles)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from research.v96_liquidity_sweep.archive_reader import iter_candles
+          from research.v96_liquidity_sweep.baseline_backtest import evaluate
+          report = evaluate(iter_candles(), max_rows=20000)
+          print("V96_BASELINE_NOT_FULL_STRATEGY")
+          print(json.dumps(report, sort_keys=True))
+          PY
