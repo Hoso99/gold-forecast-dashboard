@@ -41,6 +41,7 @@ def evaluate(rows, max_rows=None):
                 if bar["o"]>=pending["stop"]:
                     counts["invalid_next_open"]+=1
                     pending=None
+                    sweep_high=None
                     continue
             trade_bars.append(bar)
             result=simulate_sell(trade_bars,pending["stop"],cost_per_oz=0.5)
@@ -49,6 +50,7 @@ def evaluate(rows, max_rows=None):
                 counts[result.reason]+=1
                 pending=None
                 trade_bars=[]
+                sweep_high=None
             continue
         if event["event"]=="SWEEP":
             counts["sweeps"]+=1
