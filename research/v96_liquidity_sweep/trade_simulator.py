@@ -55,9 +55,8 @@ def simulate_sell(bars, stop, cost_per_oz=0.0):
                 return TradeResult(gross,gross-cost_per_oz/risk,"INITIAL_STOP",bar["minute_utc"],entry,stop,False)
             if l <= tp1:
                 first = True
-                # Deliberately no TP2 or BE evaluation on the TP1 bar.
-                continue
-        else:
+                # No TP2 or BE evaluation on the TP1 bar. Time exit still applies.
+        elif first:
             if h >= entry:
                 gross = .5 + .5*(entry-max(entry,o))/risk
                 return TradeResult(gross,gross-cost_per_oz/risk,"BREAKEVEN",bar["minute_utc"],entry,stop,True)
