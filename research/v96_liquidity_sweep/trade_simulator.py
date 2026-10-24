@@ -48,6 +48,7 @@ def simulate_sell(bars, stop, cost_per_oz=0.0):
         o,h,l,c = (float(bar[k]) for k in ("o","h","l","c"))
         if not (0 < l <= min(o,c) <= max(o,c) <= h):
             raise ValueError("Invalid OHLC")
+        first_before_bar = first
         if not first:
             if h >= stop:
                 # Adverse opening gap is executed at the worse open.
@@ -56,7 +57,7 @@ def simulate_sell(bars, stop, cost_per_oz=0.0):
             if l <= tp1:
                 first = True
                 # No TP2 or BE evaluation on the TP1 bar. Time exit still applies.
-        elif first:
+        elif first_before_bar:
             if h >= entry:
                 gross = .5 + .5*(entry-max(entry,o))/risk
                 return TradeResult(gross,gross-cost_per_oz/risk,"BREAKEVEN",bar["minute_utc"],entry,stop,True)
