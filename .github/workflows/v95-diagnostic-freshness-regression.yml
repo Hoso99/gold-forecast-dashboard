@@ -1,6 +1,11 @@
 name: V9.5 Diagnostic Freshness Regression (Research Only)
 
 on:
+  push:
+    branches:
+      - research/v95-freshness-ci-validation-20261025
+    paths:
+      - .github/workflows/v95-diagnostic-freshness-regression.yml
   workflow_dispatch:
 
 permissions:
@@ -8,7 +13,7 @@ permissions:
 
 jobs:
   isolated-research-tests:
-    if: github.ref == 'refs/heads/research/v95-diagnostic-freshness-prototype-20261025'
+    if: github.ref == 'refs/heads/research/v95-freshness-ci-validation-20261025'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
