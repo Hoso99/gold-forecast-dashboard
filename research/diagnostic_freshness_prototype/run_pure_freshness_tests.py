@@ -39,6 +39,9 @@ def main():
         "v95_trade_history.py",
         "v95_gap_aware_gate.py",
         "v95_c2_exit_adapter.py",
+        "v95_hybrid_c_research.py",
+        "v95_c2_raw_scenario_monitor.py",
+        "v95_protective_gap_probe.py",
     )
     missing = [name for name in required_helpers if not (HELPERS / name).is_file()]
     if missing:
@@ -62,6 +65,7 @@ def main():
             "V95_TELEGRAM_ENABLED": "0",
             "V95_NEWS_GATE_ENABLED": "0",
             "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(ROOT / "offline_guard"),
         }
         # Pure tests: no monitor/helper imports.
         sys.dont_write_bytecode = True
