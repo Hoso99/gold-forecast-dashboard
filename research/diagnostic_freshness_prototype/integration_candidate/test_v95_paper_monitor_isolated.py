@@ -297,23 +297,23 @@ class PaperMonitorTests(unittest.TestCase):
         state={"paper_position":pos,"diagnostics":{"m1_sell_pressure_10":71.},
                "research_votes":{"agreement":3},
                "biquote_context":{"risk":"BUILDING"}}
+
         entry=format_alert("PAPER_SELL_ENTRY","research",state)
-        self.assertIn("SELL ENTRY CONFIRMED",entry)
-        self.assertIn("Entry: 4,200.00",entry)
-        self.assertIn("Stop Loss: 4,210.00",entry)
-        self.assertIn("Take Profit: 4,180.00",entry)
-        self.assertIn("Risk/Reward: 1:2.00",entry)
-        self.assertIn("RISK & ECONOMIC EVENTS",entry)
-        self.assertIn("Calendar unavailable",entry)
-        self.assertIn("EXIT STRATEGY",entry)
-        self.assertIn("Mandatory Hard Stop Loss:",entry)
-        self.assertIn("C2 RAW v2 STATUS",entry)
-        self.assertIn("No live execution",entry)
+        self.assertIn("V9.5 PAPER RESEARCH — NO LIVE TRADE",entry)
+        self.assertIn("SELL ENTRY (hypothetical)",entry)
+        self.assertIn("Entry: 4200.00 | SL: 4210.00 | TP: 4180.00",entry)
+        self.assertIn("Target R:R: 1:2.00",entry)
+        self.assertIn("Planned paper risk: 200.00",entry)
+        self.assertIn("M1 SELL body proxy: 71.00%",entry)
+        self.assertIn("Macro risk: BUILDING",entry)
+        self.assertIn("No partial fill or break-even adjustment is assumed without acknowledgement.",entry)
+
         state["last_closed_position"]=pos
         state["paper_position"]=None
         exit_message=format_alert("TP_TOUCHED","paper exit",state)
-        self.assertIn("TAKE PROFIT TOUCHED",exit_message)
-        self.assertIn("Take Profit: 4,180.00",exit_message)
+        self.assertIn("V9.5 PAPER RESEARCH — NO LIVE TRADE",exit_message)
+        self.assertIn("TAKE PROFIT TOUCHED (paper estimate)",exit_message)
+        self.assertIn("Entry: 4200.00 | SL: 4210.00 | TP: 4180.00",exit_message)
 
     def test_telegram_disabled_by_default(self):
         with patch.object(mod,"ALERTS",False):
