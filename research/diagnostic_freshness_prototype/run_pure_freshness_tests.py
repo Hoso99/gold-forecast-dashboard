@@ -30,8 +30,23 @@ TEST_MODULES = (
 )
 
 def main():
-    if not (HELPERS / "v95_indicators.py").is_file():
-        raise SystemExit("Missing checkout-local V9.5 helper modules")
+    required_helpers = (
+        "v95_indicators.py",
+        "v95_research_votes.py",
+        "v95_telegram_format.py",
+        "v95_entry_exit_shadow.py",
+        "v95_core_sell_detectors.py",
+        "v95_trade_history.py",
+        "v95_gap_aware_gate.py",
+        "v95_c2_exit_adapter.py",
+    )
+    missing = [name for name in required_helpers if not (HELPERS / name).is_file()]
+    if missing:
+        raise SystemExit(
+            "STOP: checkout is missing required V9.5 production helpers: "
+            + ", ".join(missing)
+            + ". Do not substitute stubs for protective-exit tests."
+        )
     if not (CANDIDATE / "v95_paper_monitor.py").is_file():
         raise SystemExit("Missing candidate monitor")
     if not PROTECTIVE_RUNNER.is_file():
