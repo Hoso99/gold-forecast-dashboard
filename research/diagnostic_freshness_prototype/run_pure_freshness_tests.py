@@ -70,6 +70,7 @@ def main():
         }
         # Pure tests: no monitor/helper imports.
         sys.dont_write_bytecode = True
+        sys.path.insert(0, str(REPO))
         sys.path.insert(0, str(ROOT))
         loader = unittest.TestLoader()
         suite = unittest.TestSuite(
