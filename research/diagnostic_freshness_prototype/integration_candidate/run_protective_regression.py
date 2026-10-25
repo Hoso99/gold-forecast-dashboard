@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 CANDIDATE = ROOT / "integration_candidate"
 HELPERS = (
     Path(__file__).resolve().parents[2]
@@ -40,6 +41,7 @@ def main():
         })
 
         sys.dont_write_bytecode = True
+        sys.path.insert(0, str(REPO))
         sys.path.insert(0, str(ROOT))
         sys.path.insert(0, str(HELPERS))
         sys.path.insert(0, str(CANDIDATE))
