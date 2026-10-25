@@ -1,0 +1,33 @@
+name: V9.5 Diagnostic Freshness Regression (Research Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-research-tests:
+    if: github.ref == 'refs/heads/research/v95-diagnostic-freshness-prototype-20261025'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      V95_TELEGRAM_ENABLED: "0"
+      V95_NEWS_GATE_ENABLED: "0"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout isolated research branch without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run freshness and protective regression tests with Python network guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE/research/diagnostic_freshness_prototype/offline_guard"
+          python -B -c 'import socket; assert socket.socket.connect.__module__ == "sitecustomize", "Python offline guard did not load"'
+          python -B research/diagnostic_freshness_prototype/run_pure_freshness_tests.py
