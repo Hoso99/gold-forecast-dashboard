@@ -24,7 +24,7 @@ def journal_freshness(evidence):
         return unknown_freshness()
 
     try:
-        from unified_freshness import classify_freshness
+        from research.diagnostic_freshness_prototype.unified_freshness import classify_freshness
 
         cycle_id = evidence.cycle_id
         snapshot = evidence.snapshot()

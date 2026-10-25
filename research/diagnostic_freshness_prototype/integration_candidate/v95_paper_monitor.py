@@ -533,7 +533,7 @@ def journal_decision(action,note,state,*,freshness_evidence=None):
          "biquote_context":state.get("biquote_context",{"risk":"NOT_ENABLED"}),
          "news_context":state.get("news_context",{"risk":"UNKNOWN"})}
     try:
-        from integration_candidate.journal_freshness_adapter import journal_freshness
+        from research.diagnostic_freshness_prototype.integration_candidate.journal_freshness_adapter import journal_freshness
         freshness_metadata = journal_freshness(freshness_evidence)
     except Exception:
         freshness_metadata = {
@@ -575,7 +575,7 @@ def market_session_open(now=None):
 def cycle():
     # Research-only freshness tracking must never block monitoring.
     try:
-        from integration_candidate.freshness_evidence import FreshnessEvidence
+        from research.diagnostic_freshness_prototype.integration_candidate.freshness_evidence import FreshnessEvidence
         freshness_evidence = FreshnessEvidence()
     except Exception:
         freshness_evidence = None

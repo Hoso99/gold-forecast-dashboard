@@ -19,6 +19,7 @@ PROTECTIVE_RUNNER = CANDIDATE / "run_protective_regression.py"
 
 TEST_MODULES = (
     "test_component_cycle_tracker",
+    "test_repository_imports",
     "test_component_freshness",
     "test_cycle_evidence",
     "test_cycle_freshness_contract",

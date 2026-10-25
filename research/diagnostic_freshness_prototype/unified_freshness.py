@@ -1,7 +1,7 @@
 
 """Research-only unified diagnostic freshness classification."""
 
-from component_cycle_tracker import classify_cycle_components
+from research.diagnostic_freshness_prototype.component_cycle_tracker import classify_cycle_components
 
 
 def classify_freshness(current_cycle_id, evidence):
