@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(messa
 log=logging.getLogger("v94-stage1")
 # Tick-to-tick signed price movement is a *proxy*, not actual buying/selling volume.
 def pressure(ticks):
-    moves=[b-a for a,b in zip(ticks,ticks[1:])]
+    moves=[b-a for a,b in zip(ticks,list(ticks)[1:])]
     up=sum(max(x,0.) for x in moves)
     down=sum(max(-x,0.) for x in moves)
     if up+down==0: return 50.,50.
